@@ -68,11 +68,13 @@ public class UdafExecutor extends BaseExecutor {
      * invoke add function, add row in loop [rowStart, rowEnd).
      */
     public void add(boolean isSinglePlace, long rowStart, long rowEnd) throws UdfRuntimeException {
+        LOG.warn("yxc add begin");
         try {
             long idx = rowStart;
             do {
                 Long curPlace = UdfUtils.UNSAFE.getLong(null, UdfUtils.UNSAFE.getLong(null, inputPlacesPtr) + 8L * idx);
                 Object[] inputArgs = new Object[argTypes.length + 1];
+                LOG.warn("yxc stateObjMap add " + curPlace);
                 stateObjMap.putIfAbsent(curPlace, createAggState());
                 inputArgs[0] = stateObjMap.get(curPlace);
                 do {
@@ -94,6 +96,7 @@ public class UdafExecutor extends BaseExecutor {
      * invoke user create function to get obj.
      */
     public Object createAggState() throws UdfRuntimeException {
+        LOG.warn("yxc createAggState begin");
         try {
             return allMethods.get(UDAF_CREATE_FUNCTION).invoke(udf, null);
         } catch (Exception e) {
@@ -106,6 +109,7 @@ public class UdafExecutor extends BaseExecutor {
      * invoke destroy before colse. Here we destroy all data at once
      */
     public void destroy() throws UdfRuntimeException {
+        LOG.warn("yxc destroy begin");
         try {
             for (Object obj : stateObjMap.values()) {
                 allMethods.get(UDAF_DESTROY_FUNCTION).invoke(udf, obj);
@@ -115,12 +119,46 @@ public class UdafExecutor extends BaseExecutor {
             LOG.warn("invoke destroy function meet some error: " + e.getCause().toString());
             throw new UdfRuntimeException("UDAF failed to destroy: ", e);
         }
+        LOG.warn("yxc destroy end");
+    }
+
+    /**
+     * invoke reset
+     */
+    public void reset(long place) throws UdfRuntimeException {
+        LOG.warn("yxc reset begin");
+        LOG.warn("yxc udaf reset place: " + place);
+        try {
+            Object[] args = new Object[1];
+            args[0] = stateObjMap.get((Long) place);
+            LOG.warn("yxc map test");
+            for (Long key : stateObjMap.keySet()) {
+                LOG.warn("yxc key" + key);
+            }
+
+            Method func = allMethods.get(UDAF_RESET_FUNCTION);
+
+            if (func == null) {
+                LOG.warn("can't get reset func ");
+            } else if (args[0] == null) {
+                LOG.warn("args is null");
+            } else {
+                LOG.warn("get reset func and args not null");
+                func.invoke(udf, args);
+            }
+        } catch (Exception e) {
+            LOG.warn("invoke reset function meet some error: " + e.getCause().toString());
+            throw new UdfRuntimeException("UDAF failed to reset: ", e);
+        }
+        LOG.warn("yxc reset end");
+        LOG.warn("");
     }
 
     /**
      * invoke serialize function and return byte[] to backends.
      */
     public byte[] serialize(long place) throws UdfRuntimeException {
+        LOG.warn("yxc serialize begin");
         try {
             Object[] args = new Object[2];
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
@@ -139,6 +177,7 @@ public class UdafExecutor extends BaseExecutor {
      * here call deserialize first, and call merge.
      */
     public void merge(long place, byte[] data) throws UdfRuntimeException {
+        LOG.warn("yxc merge begin");
         try {
             Object[] args = new Object[2];
             ByteArrayInputStream bins = new ByteArrayInputStream(data);
@@ -147,6 +186,7 @@ public class UdafExecutor extends BaseExecutor {
             allMethods.get(UDAF_DESERIALIZE_FUNCTION).invoke(udf, args);
             args[1] = args[0];
             Long curPlace = place;
+            LOG.warn("yxc stateObjMap add " + curPlace);
             stateObjMap.putIfAbsent(curPlace, createAggState());
             args[0] = stateObjMap.get(curPlace);
             allMethods.get(UDAF_MERGE_FUNCTION).invoke(udf, args);
@@ -160,8 +200,10 @@ public class UdafExecutor extends BaseExecutor {
      * invoke getValue to return finally result.
      */
     public boolean getValue(long row, long place) throws UdfRuntimeException {
+        LOG.warn("yxc getValue begin");
         try {
             if (stateObjMap.get(place) == null) {
+                LOG.warn("yxc stateObjMap add " + place);
                 stateObjMap.put(place, createAggState());
             }
             return storeUdfResult(allMethods.get(UDAF_RESULT_FUNCTION).invoke(udf, stateObjMap.get((Long) place)),
@@ -202,7 +244,6 @@ public class UdafExecutor extends BaseExecutor {
         inputPlacesPtr = request.input_places_ptr;
         allMethods = new HashMap<>();
         stateObjMap = new HashMap<>();
-
         ArrayList<String> signatures = Lists.newArrayList();
         try {
             ClassLoader loader;
@@ -227,6 +268,11 @@ public class UdafExecutor extends BaseExecutor {
                     case UDAF_MERGE_FUNCTION:
                     case UDAF_SERIALIZE_FUNCTION:
                     case UDAF_DESERIALIZE_FUNCTION: {
+                        allMethods.put(methods[idx].getName(), methods[idx]);
+                        break;
+                    }
+                    case UDAF_RESET_FUNCTION: {
+                        LOG.warn("init reset func");
                         allMethods.put(methods[idx].getName(), methods[idx]);
                         break;
                     }

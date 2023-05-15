@@ -45,6 +45,7 @@ public abstract class BaseExecutor {
     public static final String UDF_FUNCTION_NAME = "evaluate";
     public static final String UDAF_CREATE_FUNCTION = "create";
     public static final String UDAF_DESTROY_FUNCTION = "destroy";
+    public static final String UDAF_RESET_FUNCTION = "reset";
     public static final String UDAF_ADD_FUNCTION = "add";
     public static final String UDAF_SERIALIZE_FUNCTION = "serialize";
     public static final String UDAF_DESERIALIZE_FUNCTION = "deserialize";
