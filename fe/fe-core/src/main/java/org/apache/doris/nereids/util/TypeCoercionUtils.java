@@ -465,8 +465,9 @@ public class TypeCoercionUtils {
                 // exception means overflow.
                 return castChildren(divide, left, right, DoubleType.INSTANCE);
             }
+            int retScale = Math.max(dt1.getScale(), dt2.getScale()) + 4 + dt2.getScale();
             return divide.withChildren(castIfNotSameType(left,
-                    DecimalV3Type.createDecimalV3Type(retType.getPrecision(), dt1.getScale() + dt2.getScale())),
+                    DecimalV3Type.createDecimalV3Type(retType.getPrecision(), retScale)),
                     castIfNotSameType(right, dt2));
         } else if (t1.isDecimalV2Type() || t2.isDecimalV2Type()) {
             commonType = DecimalV2Type.SYSTEM_DEFAULT;
