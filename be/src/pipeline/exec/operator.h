@@ -90,7 +90,7 @@ enum class SinkState : uint8_t {
 class OperatorBuilderBase;
 class OperatorBase;
 class OperatorXBase;
-class DataSinkOperatorX;
+class DataSinkOperatorXBase;
 
 using OperatorPtr = std::shared_ptr<OperatorBase>;
 using Operators = std::vector<OperatorPtr>;
@@ -98,7 +98,7 @@ using Operators = std::vector<OperatorPtr>;
 using OperatorXPtr = std::shared_ptr<OperatorXBase>;
 using OperatorXs = std::vector<OperatorXPtr>;
 
-using DataSinkOperatorXPtr = std::shared_ptr<DataSinkOperatorX>;
+using DataSinkOperatorXPtr = std::shared_ptr<DataSinkOperatorXBase>;
 
 using OperatorBuilderPtr = std::shared_ptr<OperatorBuilderBase>;
 using OperatorBuilders = std::vector<OperatorBuilderPtr>;
