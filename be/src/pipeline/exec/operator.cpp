@@ -217,4 +217,21 @@ Status DataSinkOperatorX::init(const TPlanNode& tnode, RuntimeState* state) {
     _name = print_plan_node_type(tnode.node_type) + "SinkOperatorX";
     return Status::OK();
 }
+
+void OperatorXBase::release_block_memory(vectorized::Block& block) {
+    block.clear_column_data(_child_x->row_desc().num_materialized_slots());
+}
+
+void OperatorXBase::reached_limit(RuntimeState* state, vectorized::Block* block,
+                                  SourceState& source_state) const {
+    auto& local_state = state->get_local_state(id())->cast<PipelineXLocalStateBase>();
+    if (_limit != -1 and local_state._num_rows_returned + block->rows() >= _limit) {
+        block->set_num_rows(_limit - local_state._num_rows_returned);
+        source_state = SourceState::FINISHED;
+    }
+
+    local_state._num_rows_returned += block->rows();
+    COUNTER_SET(local_state._rows_returned_counter, local_state._num_rows_returned);
+}
+
 } // namespace doris::pipeline
