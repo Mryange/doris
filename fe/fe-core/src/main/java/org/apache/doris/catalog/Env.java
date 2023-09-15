@@ -32,6 +32,7 @@ import org.apache.doris.analysis.AdminCompactTableStmt;
 import org.apache.doris.analysis.AdminSetConfigStmt;
 import org.apache.doris.analysis.AdminSetPartitionVersionStmt;
 import org.apache.doris.analysis.AdminSetReplicaStatusStmt;
+import org.apache.doris.analysis.AdminSetReplicaVersionStmt;
 import org.apache.doris.analysis.AdminSetTableStatusStmt;
 import org.apache.doris.analysis.AlterDatabasePropertyStmt;
 import org.apache.doris.analysis.AlterDatabaseQuotaStmt;
@@ -195,6 +196,7 @@ import org.apache.doris.persist.ReplacePartitionOperationLog;
 import org.apache.doris.persist.ReplicaPersistInfo;
 import org.apache.doris.persist.SetPartitionVersionOperationLog;
 import org.apache.doris.persist.SetReplicaStatusOperationLog;
+import org.apache.doris.persist.SetReplicaVersionOperationLog;
 import org.apache.doris.persist.SetTableStatusOperationLog;
 import org.apache.doris.persist.Storage;
 import org.apache.doris.persist.StorageInfo;
@@ -212,6 +214,7 @@ import org.apache.doris.qe.AuditEventProcessor;
 import org.apache.doris.qe.ConnectContext;
 import org.apache.doris.qe.GlobalVariable;
 import org.apache.doris.qe.JournalObservable;
+import org.apache.doris.qe.QueryCancelWorker;
 import org.apache.doris.qe.VariableMgr;
 import org.apache.doris.resource.Tag;
 import org.apache.doris.resource.workloadgroup.WorkloadGroupMgr;
@@ -219,6 +222,7 @@ import org.apache.doris.scheduler.disruptor.TaskDisruptor;
 import org.apache.doris.scheduler.manager.JobTaskManager;
 import org.apache.doris.scheduler.manager.TimerJobManager;
 import org.apache.doris.scheduler.manager.TransientTaskManager;
+import org.apache.doris.scheduler.registry.ExportTaskRegister;
 import org.apache.doris.scheduler.registry.PersistentJobRegister;
 import org.apache.doris.scheduler.registry.TimerJobRegister;
 import org.apache.doris.service.ExecuteEnv;
@@ -338,6 +342,7 @@ public class Env {
     private MetastoreEventsProcessor metastoreEventsProcessor;
 
     private PersistentJobRegister persistentJobRegister;
+    private ExportTaskRegister exportTaskRegister;
     private TimerJobManager timerJobManager;
     private TransientTaskManager transientTaskManager;
     private JobTaskManager jobTaskManager;
@@ -471,6 +476,8 @@ public class Env {
     private BinlogManager binlogManager;
 
     private BinlogGcer binlogGcer;
+
+    private QueryCancelWorker queryCancelWorker;
 
     /**
      * TODO(tsy): to be removed after load refactor
@@ -621,6 +628,7 @@ public class Env {
         this.timerJobManager.setDisruptor(taskDisruptor);
         this.transientTaskManager.setDisruptor(taskDisruptor);
         this.persistentJobRegister = new TimerJobRegister(timerJobManager);
+        this.exportTaskRegister = new ExportTaskRegister(transientTaskManager);
         this.replayedJournalId = new AtomicLong(0L);
         this.stmtIdCounter = new AtomicLong(0L);
         this.isElectable = false;
@@ -714,6 +722,7 @@ public class Env {
         this.binlogManager = new BinlogManager();
         this.binlogGcer = new BinlogGcer();
         this.columnIdFlusher = new ColumnIdFlushDaemon();
+        this.queryCancelWorker = new QueryCancelWorker(systemInfo);
     }
 
     public static void destroyCheckpoint() {
@@ -958,6 +967,8 @@ public class Env {
         if (statisticsPeriodCollector != null) {
             statisticsPeriodCollector.start();
         }
+
+        queryCancelWorker.start();
     }
 
     // wait until FE is ready.
@@ -1175,7 +1186,8 @@ public class Env {
         }
 
         if (Config.cluster_id != -1 && clusterId != Config.cluster_id) {
-            throw new IOException("cluster id is not equal with config item cluster_id. will exit.");
+            throw new IOException("cluster id is not equal with config item cluster_id. will exit. "
+                    + "If you are in recovery mode, please also modify the cluster_id in 'doris-meta/image/VERSION'");
         }
 
         if (role.equals(FrontendNodeType.FOLLOWER)) {
@@ -1513,6 +1525,7 @@ public class Env {
         publishVersionDaemon.start();
         // Start txn cleaner
         txnCleaner.start();
+        timerJobManager.start();
         // Alter
         getAlterInstance().start();
         // Consistency checker
@@ -1602,6 +1615,9 @@ public class Env {
 
         // stop mtmv scheduler
         mtmvJobManager.stop();
+        if (analysisManager != null) {
+            analysisManager.getStatisticsCache().preHeat();
+        }
     }
 
     // Set global variable 'lower_case_table_names' only when the cluster is initialized.
@@ -1647,7 +1663,8 @@ public class Env {
      * frontend log is deleted because of checkpoint.
      */
     private void checkCurrentNodeExist() {
-        if (Config.metadata_failure_recovery.equals("true")) {
+        boolean metadataFailureRecovery = null != System.getProperty(FeConstants.METADATA_FAILURE_RECOVERY_KEY);
+        if (metadataFailureRecovery) {
             return;
         }
 
@@ -1840,6 +1857,7 @@ public class Env {
             long jobId = dis.readLong();
             newChecksum ^= jobId;
             ExportJob job = ExportJob.read(dis);
+            job.cancelReplayedExportJob();
             if (!job.isExpired(curTime)) {
                 exportMgr.unprotectAddJob(job);
             }
@@ -2599,6 +2617,7 @@ public class Env {
         long startTime = System.currentTimeMillis();
         boolean hasLog = false;
         while (true) {
+            long entityStartTime = System.currentTimeMillis();
             Pair<Long, JournalEntity> kv = cursor.next();
             if (kv == null) {
                 break;
@@ -2610,6 +2629,7 @@ public class Env {
             }
             hasLog = true;
             EditLog.loadJournal(this, logId, entity);
+            long loadJournalEndTime = System.currentTimeMillis();
             replayedJournalId.incrementAndGet();
             LOG.debug("journal {} replayed.", replayedJournalId);
             if (feType != FrontendNodeType.MASTER) {
@@ -2619,10 +2639,26 @@ public class Env {
                 // Metric repo may not init after this replay thread start
                 MetricRepo.COUNTER_EDIT_LOG_READ.increase(1L);
             }
+
+            long entityCost = System.currentTimeMillis() - entityStartTime;
+            if (entityCost >= 1000) {
+                long loadJournalCost = loadJournalEndTime - entityStartTime;
+                LOG.warn("entityCost:{} loadJournalCost:{} logId:{} replayedJournalId:{} code:{} size:{}",
+                        entityCost, loadJournalCost, logId, replayedJournalId, entity.getOpCode(),
+                        entity.getDataSize());
+            }
         }
         long cost = System.currentTimeMillis() - startTime;
         if (cost >= 1000) {
             LOG.warn("replay journal cost too much time: {} replayedJournalId: {}", cost, replayedJournalId);
+        }
+
+        if (replayedJournalId.get() != newToJournalId) {
+            String msg = "replayedJournalId:" + replayedJournalId.get() + " not equal with newToJournalId:"
+                    + newToJournalId + " , will exit";
+            LOG.error(msg);
+            Util.stdoutWithTime(msg);
+            System.exit(-1);
         }
 
         return hasLog;
@@ -3788,6 +3824,10 @@ public class Env {
         return persistentJobRegister;
     }
 
+    public ExportTaskRegister getExportTaskRegister() {
+        return exportTaskRegister;
+    }
+
     public TimerJobManager getAsyncJobManager() {
         return timerJobManager;
     }
@@ -4033,7 +4073,8 @@ public class Env {
     public void cancelAlter(CancelAlterTableStmt stmt) throws DdlException {
         if (stmt.getAlterType() == AlterType.ROLLUP) {
             this.getMaterializedViewHandler().cancel(stmt);
-        } else if (stmt.getAlterType() == AlterType.COLUMN) {
+        } else if (stmt.getAlterType() == AlterType.COLUMN
+                       || stmt.getAlterType() == AlterType.INDEX) {
             this.getSchemaChangeHandler().cancel(stmt);
         } else {
             throw new DdlException("Cancel " + stmt.getAlterType() + " does not implement yet");
@@ -5375,6 +5416,56 @@ public class Env {
             }
         } catch (MetaNotFoundException e) {
             throw new MetaNotFoundException("set replica status failed, tabletId=" + tabletId, e);
+        }
+    }
+
+    // Set specified replica's version. If replica does not exist, just ignore it.
+    public void setReplicaVersion(AdminSetReplicaVersionStmt stmt) throws MetaNotFoundException {
+        long tabletId = stmt.getTabletId();
+        long backendId = stmt.getBackendId();
+        Long version = stmt.getVersion();
+        Long lastSuccessVersion = stmt.getLastSuccessVersion();
+        Long lastFailedVersion = stmt.getLastFailedVersion();
+        long updateTime = System.currentTimeMillis();
+        setReplicaVersionInternal(tabletId, backendId, version, lastSuccessVersion, lastFailedVersion,
+                updateTime, false);
+    }
+
+    public void replaySetReplicaVersion(SetReplicaVersionOperationLog log) throws MetaNotFoundException {
+        setReplicaVersionInternal(log.getTabletId(), log.getBackendId(), log.getVersion(),
+                log.getLastSuccessVersion(), log.getLastFailedVersion(), log.getUpdateTime(), true);
+    }
+
+    private void setReplicaVersionInternal(long tabletId, long backendId, Long version, Long lastSuccessVersion,
+            Long lastFailedVersion, long updateTime, boolean isReplay)
+            throws MetaNotFoundException {
+        try {
+            TabletMeta meta = tabletInvertedIndex.getTabletMeta(tabletId);
+            if (meta == null) {
+                throw new MetaNotFoundException("tablet does not exist");
+            }
+            Database db = getInternalCatalog().getDbOrMetaException(meta.getDbId());
+            Table table = db.getTableOrMetaException(meta.getTableId());
+            table.writeLockOrMetaException();
+            try {
+                Replica replica = tabletInvertedIndex.getReplica(tabletId, backendId);
+                if (replica == null) {
+                    throw new MetaNotFoundException("replica does not exist on backend, beId=" + backendId);
+                }
+                replica.adminUpdateVersionInfo(version, lastFailedVersion, lastSuccessVersion, updateTime);
+                if (!isReplay) {
+                    SetReplicaVersionOperationLog log = new SetReplicaVersionOperationLog(backendId, tabletId,
+                            version, lastSuccessVersion, lastFailedVersion, updateTime);
+                    getEditLog().logSetReplicaVersion(log);
+                }
+                LOG.info("set replica {} of tablet {} on backend {} as version {}, last success version {} ,"
+                        + ", last failed version {}, update time {}. is replay: {}", replica.getId(), tabletId,
+                        backendId, version, lastSuccessVersion, lastFailedVersion, updateTime, isReplay);
+            } finally {
+                table.writeUnlock();
+            }
+        } catch (MetaNotFoundException e) {
+            throw new MetaNotFoundException("set replica version failed, tabletId=" + tabletId, e);
         }
     }
 
