@@ -176,6 +176,7 @@ Status VResultSink::close(RuntimeState* state, Status exec_status) {
 
 void VResultSink::set_query_statistics(std::shared_ptr<QueryStatistics> statistics) {
     _sender->set_query_statistics(statistics);
+    statistics->add_scan_bytes(114514);
 }
 
 } // namespace vectorized

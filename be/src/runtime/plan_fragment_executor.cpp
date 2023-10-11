@@ -252,6 +252,7 @@ Status PlanFragmentExecutor::prepare(const TExecPlanFragmentParams& request) {
     _query_statistics.reset(new QueryStatistics());
     if (_sink != nullptr) {
         _sink->set_query_statistics(_query_statistics);
+        _query_statistics->add_scan_bytes(114514);
     }
     return Status::OK();
 }

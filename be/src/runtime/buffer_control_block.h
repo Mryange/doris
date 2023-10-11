@@ -28,6 +28,7 @@
 #include <memory>
 #include <mutex>
 
+#include "common/logging.h"
 #include "common/status.h"
 #include "runtime/query_statistics.h"
 
@@ -95,6 +96,8 @@ public:
 
     void set_query_statistics(std::shared_ptr<QueryStatistics> statistics) {
         _query_statistics = statistics;
+        _query_statistics->add_scan_bytes(114514);
+        LOG_WARNING("yxc test").tag("address", _query_statistics.get());
     }
 
     void update_num_written_rows(int64_t num_rows) {
@@ -110,6 +113,7 @@ public:
         if (_query_statistics != nullptr) {
             int64_t max_peak_memory_bytes = _query_statistics->calculate_max_peak_memory_bytes();
             _query_statistics->set_max_peak_memory_bytes(max_peak_memory_bytes);
+            LOG_WARNING("yxc test").tag("address", _query_statistics.get());
         }
     }
 
