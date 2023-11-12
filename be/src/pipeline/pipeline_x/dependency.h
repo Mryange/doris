@@ -739,7 +739,6 @@ private:
 class AsyncWriterDependency final : public WriteDependency {
 public:
     ENABLE_FACTORY_CREATOR(AsyncWriterDependency);
-    bool avoid_using_blocked_queue_dependency() override { return false; }
     AsyncWriterDependency(int id) : WriteDependency(id, "AsyncWriterDependency") {}
     ~AsyncWriterDependency() override = default;
     void* shared_state() override { return nullptr; }
