@@ -160,11 +160,11 @@ void DataQueue::set_finish(int child_idx) {
         return;
     }
     _is_finished[child_idx] = true;
-    if (_source_dependency) {
-        _source_dependency->set_ready();
-    }
     if (_un_finished_counter.fetch_sub(1) == 1) {
         _is_all_finished = true;
+    }
+    if (_source_dependency) {
+        _source_dependency->set_ready();
     }
 }
 
