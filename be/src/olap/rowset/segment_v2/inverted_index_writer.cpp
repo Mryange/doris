@@ -117,8 +117,7 @@ public:
             if (config::enable_write_index_searcher_cache) {
                 // open index searcher into cache
                 auto index_file_name = InvertedIndexDescriptor::get_index_file_name(
-                        _segment_file_name, _index_meta->index_id(),
-                        _index_meta->get_index_suffix());
+                        _segment_file_name, _index_meta->index_id());
                 static_cast<void>(InvertedIndexSearcherCache::instance()->insert(_fs, _directory,
                                                                                  index_file_name));
             }
@@ -140,8 +139,7 @@ public:
         bool create = true;
 
         auto index_path = InvertedIndexDescriptor::get_temporary_index_path(
-                _directory + "/" + _segment_file_name, _index_meta->index_id(),
-                _index_meta->get_index_suffix());
+                _directory + "/" + _segment_file_name, _index_meta->index_id());
 
         // LOG(INFO) << "inverted index path: " << index_path;
         bool exists = false;
@@ -431,8 +429,8 @@ public:
     int64_t file_size() const override {
         std::filesystem::path dir(_directory);
         dir /= _segment_file_name;
-        auto file_name = InvertedIndexDescriptor::get_index_file_name(
-                dir.string(), _index_meta->index_id(), _index_meta->get_index_suffix());
+        auto file_name =
+                InvertedIndexDescriptor::get_index_file_name(dir.string(), _index_meta->index_id());
         int64_t size = -1;
         auto st = _fs->file_size(file_name.c_str(), &size);
         if (!st.ok()) {
@@ -467,8 +465,7 @@ public:
             // write bkd file
             if constexpr (field_is_numeric_type(field_type)) {
                 auto index_path = InvertedIndexDescriptor::get_temporary_index_path(
-                        _directory + "/" + _segment_file_name, _index_meta->index_id(),
-                        _index_meta->get_index_suffix());
+                        _directory + "/" + _segment_file_name, _index_meta->index_id());
                 dir = DorisCompoundDirectory::getDirectory(_fs, index_path.c_str(), true);
                 write_null_bitmap(null_bitmap_out, dir);
                 _bkd_writer->max_doc_ = _rid;

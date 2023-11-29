@@ -25,7 +25,6 @@
 #include <utility>
 
 #include "common/config.h"
-#include "olap/olap_common.h"
 #include "runtime/define_primitive_type.h"
 #include "util/trace.h"
 #include "vec/columns/column_array.h"
@@ -131,11 +130,10 @@ vectorized::IColumn::MutablePtr Schema::get_column_by_field(const Field& field) 
     return get_data_type_ptr(field)->create_column();
 }
 
-vectorized::IColumn::MutablePtr Schema::get_predicate_column_ptr(const FieldType& type,
-                                                                 bool is_nullable,
+vectorized::IColumn::MutablePtr Schema::get_predicate_column_ptr(const Field& field,
                                                                  const ReaderType reader_type) {
     vectorized::IColumn::MutablePtr ptr = nullptr;
-    switch (type) {
+    switch (field.type()) {
     case FieldType::OLAP_FIELD_TYPE_BOOL:
         ptr = doris::vectorized::PredicateColumnType<TYPE_BOOLEAN>::create();
         break;
@@ -174,7 +172,8 @@ vectorized::IColumn::MutablePtr Schema::get_predicate_column_ptr(const FieldType
         break;
     case FieldType::OLAP_FIELD_TYPE_CHAR:
         if (config::enable_low_cardinality_optimize && reader_type == ReaderType::READER_QUERY) {
-            ptr = doris::vectorized::ColumnDictionary<doris::vectorized::Int32>::create(type);
+            ptr = doris::vectorized::ColumnDictionary<doris::vectorized::Int32>::create(
+                    field.type());
         } else {
             ptr = doris::vectorized::PredicateColumnType<TYPE_CHAR>::create();
         }
@@ -183,7 +182,8 @@ vectorized::IColumn::MutablePtr Schema::get_predicate_column_ptr(const FieldType
     case FieldType::OLAP_FIELD_TYPE_STRING:
     case FieldType::OLAP_FIELD_TYPE_JSONB:
         if (config::enable_low_cardinality_optimize && reader_type == ReaderType::READER_QUERY) {
-            ptr = doris::vectorized::ColumnDictionary<doris::vectorized::Int32>::create(type);
+            ptr = doris::vectorized::ColumnDictionary<doris::vectorized::Int32>::create(
+                    field.type());
         } else {
             ptr = doris::vectorized::PredicateColumnType<TYPE_STRING>::create();
         }
@@ -210,12 +210,12 @@ vectorized::IColumn::MutablePtr Schema::get_predicate_column_ptr(const FieldType
         ptr = doris::vectorized::PredicateColumnType<TYPE_IPV6>::create();
         break;
     default:
-        throw Exception(
-                ErrorCode::SCHEMA_SCHEMA_FIELD_INVALID,
-                fmt::format("Unexpected type when choosing predicate column, type={}", int(type)));
+        throw Exception(ErrorCode::SCHEMA_SCHEMA_FIELD_INVALID,
+                        fmt::format("Unexpected type when choosing predicate column, type={}",
+                                    int(field.type())));
     }
 
-    if (is_nullable) {
+    if (field.is_nullable()) {
         return doris::vectorized::ColumnNullable::create(std::move(ptr),
                                                          doris::vectorized::ColumnUInt8::create());
     }

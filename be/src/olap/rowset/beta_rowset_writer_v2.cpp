@@ -96,9 +96,11 @@ Status BetaRowsetWriterV2::flush_memtable(vectorized::Block* block, int32_t segm
         return Status::OK();
     }
 
+    TabletSchemaSPtr flush_schema;
     {
         SCOPED_RAW_TIMER(&_segment_writer_ns);
-        RETURN_IF_ERROR(_segment_creator.flush_single_block(block, segment_id, flush_size));
+        RETURN_IF_ERROR(
+                _segment_creator.flush_single_block(block, segment_id, flush_size, flush_schema));
     }
     // delete bitmap and seg compaction are done on the destination BE.
     return Status::OK();

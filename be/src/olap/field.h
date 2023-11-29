@@ -47,8 +47,7 @@ public:
               _name(column.name()),
               _index_size(column.index_length()),
               _is_nullable(column.is_nullable()),
-              _unique_id(column.unique_id()),
-              _path(column.path_info()) {}
+              _unique_id(column.unique_id()) {}
 
     virtual ~Field() = default;
 
@@ -58,7 +57,6 @@ public:
     size_t index_size() const { return _index_size; }
     int32_t unique_id() const { return _unique_id; }
     const std::string& name() const { return _name; }
-    const vectorized::PathInData& path() const { return _path; }
 
     virtual void set_to_max(char* buf) const { return _type_info->set_to_max(buf); }
     virtual void set_to_zone_map_max(char* buf) const { set_to_max(buf); }
@@ -257,7 +255,6 @@ private:
     int32_t _precision;
     int32_t _scale;
     int32_t _unique_id;
-    vectorized::PathInData _path;
 };
 
 class MapField : public Field {

@@ -2418,13 +2418,4 @@ public class OlapTable extends Table {
     public boolean needReadLockWhenPlan() {
         return true;
     }
-
-    public boolean hasVariantColumns() {
-        for (Column column : getBaseSchema()) {
-            if (column.getType().isVariantType()) {
-                return true;
-            }
-        }
-        return false;
-    }
 }

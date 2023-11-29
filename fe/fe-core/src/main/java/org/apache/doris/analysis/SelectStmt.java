@@ -90,7 +90,6 @@ public class SelectStmt extends QueryStmt {
 
     protected SelectList selectList;
     private final ArrayList<String> colLabels; // lower case column labels
-    private final ArrayList<List<String>> subColPath; // case insensitive column labels
     protected FromClause fromClause;
     protected GroupByClause groupByClause;
     private List<Expr> originalExpr;
@@ -146,7 +145,6 @@ public class SelectStmt extends QueryStmt {
         this.selectList = new SelectList();
         this.fromClause = new FromClause();
         this.colLabels = Lists.newArrayList();
-        this.subColPath = Lists.newArrayList();
     }
 
     public SelectStmt(
@@ -173,7 +171,6 @@ public class SelectStmt extends QueryStmt {
         this.havingClause = havingPredicate;
 
         this.colLabels = Lists.newArrayList();
-        this.subColPath = Lists.newArrayList();
         this.havingPred = null;
         this.aggInfo = null;
         this.sortInfo = null;
@@ -194,7 +191,6 @@ public class SelectStmt extends QueryStmt {
                 other.havingClauseAfterAnalyzed != null ? other.havingClauseAfterAnalyzed.clone() : null;
 
         colLabels = Lists.newArrayList(other.colLabels);
-        subColPath = Lists.newArrayList(other.subColPath);
         aggInfo = (other.aggInfo != null) ? other.aggInfo.clone() : null;
         analyticInfo = (other.analyticInfo != null) ? other.analyticInfo.clone() : null;
         sqlString = (other.sqlString != null) ? other.sqlString : null;
@@ -217,7 +213,6 @@ public class SelectStmt extends QueryStmt {
         super.reset();
         selectList.reset();
         colLabels.clear();
-        subColPath.clear();
         fromClause.reset();
         if (whereClause != null) {
             whereClause.reset();
@@ -372,12 +367,6 @@ public class SelectStmt extends QueryStmt {
     public ArrayList<String> getColLabels() {
         return colLabels;
     }
-
-    @Override
-    public ArrayList<List<String>> getSubColPath() {
-        return subColPath;
-    }
-
 
     public ExprSubstitutionMap getBaseTblSmap() {
         return baseTblSmap;
@@ -602,7 +591,6 @@ public class SelectStmt extends QueryStmt {
                     }
                     aliasSMap.put(aliasRef, item.getExpr().clone());
                     colLabels.add(columnLabel);
-                    subColPath.add(item.toSubColumnLabels());
                 }
             }
         }
@@ -644,7 +632,6 @@ public class SelectStmt extends QueryStmt {
                     resultExprs.add(rewriteQueryExprByMvColumnExpr(expr, analyzer));
                 }
                 colLabels.add("col_" + colLabels.size());
-                subColPath.add(expr.toSubColumnLabel());
             }
         }
         // analyze valueList if exists
@@ -829,8 +816,7 @@ public class SelectStmt extends QueryStmt {
             LOG.debug("only support duplicate key or MOW model");
             return false;
         }
-        if (!olapTable.getEnableLightSchemaChange() || !Strings.isNullOrEmpty(olapTable.getStoragePolicy())
-                    || olapTable.hasVariantColumns()) {
+        if (!olapTable.getEnableLightSchemaChange() || !Strings.isNullOrEmpty(olapTable.getStoragePolicy())) {
             return false;
         }
         if (getOrderByElements() != null) {
@@ -1254,8 +1240,6 @@ public class SelectStmt extends QueryStmt {
             slot.setTupleId(desc.getId());
             resultExprs.add(rewriteQueryExprByMvColumnExpr(slot, analyzer));
             colLabels.add(col.getName());
-            // empty sub lables
-            subColPath.add(Lists.newArrayList());
         }
     }
 

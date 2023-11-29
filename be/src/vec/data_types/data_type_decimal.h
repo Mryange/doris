@@ -178,10 +178,7 @@ public:
         if constexpr (std::is_same_v<TypeId<T>, TypeId<Decimal128I>>) {
             return doris::FieldType::OLAP_FIELD_TYPE_DECIMAL128I;
         }
-        if constexpr (std::is_same_v<TypeId<T>, TypeId<Decimal256>>) {
-            return doris::FieldType::OLAP_FIELD_TYPE_DECIMAL256;
-        }
-        return doris::FieldType::OLAP_FIELD_TYPE_DECIMAL;
+        __builtin_unreachable();
     }
 
     int64_t get_uncompressed_serialized_bytes(const IColumn& column,

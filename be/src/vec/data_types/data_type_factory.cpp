@@ -162,8 +162,7 @@ DataTypePtr DataTypeFactory::create_data_type(const TypeDescriptor& col_desc, bo
         nested = std::make_shared<vectorized::DataTypeFloat64>();
         break;
     case TYPE_VARIANT:
-        nested = std::make_shared<vectorized::DataTypeObject>("", true);
-        break;
+        return std::make_shared<vectorized::DataTypeObject>("", true);
     case TYPE_STRING:
     case TYPE_CHAR:
     case TYPE_VARCHAR:
@@ -303,8 +302,7 @@ DataTypePtr DataTypeFactory::create_data_type(const TypeIndex& type_index, bool 
         nested = std::make_shared<vectorized::DataTypeString>();
         break;
     case TypeIndex::VARIANT:
-        nested = std::make_shared<vectorized::DataTypeObject>("", true);
-        break;
+        return std::make_shared<vectorized::DataTypeObject>("", true);
     case TypeIndex::Decimal32:
         nested = std::make_shared<DataTypeDecimal<Decimal32>>(BeConsts::MAX_DECIMAL32_PRECISION, 0);
         break;
@@ -402,8 +400,7 @@ DataTypePtr DataTypeFactory::_create_primitive_data_type(const FieldType& type, 
         result = std::make_shared<vectorized::DataTypeString>();
         break;
     case FieldType::OLAP_FIELD_TYPE_VARIANT:
-        result = std::make_shared<vectorized::DataTypeObject>("", true);
-        break;
+        return std::make_shared<vectorized::DataTypeObject>("", true);
     case FieldType::OLAP_FIELD_TYPE_JSONB:
         result = std::make_shared<vectorized::DataTypeJsonb>();
         break;
@@ -482,8 +479,7 @@ DataTypePtr DataTypeFactory::create_data_type(const PColumnMeta& pcolumn) {
         nested = std::make_shared<DataTypeString>();
         break;
     case PGenericType::VARIANT:
-        nested = std::make_shared<DataTypeObject>("", true);
-        break;
+        return std::make_shared<DataTypeObject>("", true);
     case PGenericType::JSONB:
         nested = std::make_shared<DataTypeJsonb>();
         break;
