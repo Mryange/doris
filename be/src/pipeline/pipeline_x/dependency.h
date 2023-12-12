@@ -579,6 +579,7 @@ enum class ExchangeType : uint8_t {
     HASH_SHUFFLE = 1,
     PASSTHROUGH = 2,
     BUCKET_HASH_SHUFFLE = 3,
+    ADAPTIVE_PASSTHROUGH = 4
 };
 
 inline std::string get_exchange_type_name(ExchangeType idx) {
@@ -591,6 +592,8 @@ inline std::string get_exchange_type_name(ExchangeType idx) {
         return "PASSTHROUGH";
     case ExchangeType::BUCKET_HASH_SHUFFLE:
         return "BUCKET_HASH_SHUFFLE";
+    case ExchangeType::ADAPTIVE_PASSTHROUGH:
+        return "ADAPTIVE_PASSTHROUGH";
     }
     LOG(FATAL) << "__builtin_unreachable";
     __builtin_unreachable();

@@ -102,6 +102,8 @@ public:
     Status sink(RuntimeState* state, vectorized::Block* in_block,
                 SourceState source_state) override;
 
+    ExchangeType get_local_exchange_type() const override { return ExchangeType::PASSTHROUGH; }
+
 private:
     friend class NestedLoopJoinBuildSinkLocalState;
 

@@ -100,7 +100,8 @@ Status ShuffleExchanger::_split_rows(RuntimeState* state, const uint32_t* __rest
     }
     auto new_block = vectorized::Block::create_shared(block->clone_empty());
     new_block->swap(*block);
-    if (get_type() == ExchangeType::HASH_SHUFFLE) {
+    if (get_type() == ExchangeType::HASH_SHUFFLE ||
+        get_type() == ExchangeType::ADAPTIVE_PASSTHROUGH) {
         for (size_t i = 0; i < _num_partitions; i++) {
             size_t start = local_state._partition_rows_histogram[i];
             size_t size = local_state._partition_rows_histogram[i + 1] - start;
@@ -155,6 +156,42 @@ Status PassthroughExchanger::get_block(RuntimeState* state, vectorized::Block* b
         local_state._dependency->block();
     }
     return Status::OK();
+}
+
+Status AdaptivePassthroughExchanger::sink(RuntimeState* state, vectorized::Block* in_block,
+                                          SourceState source_state,
+                                          LocalExchangeSinkLocalState& local_state) {
+    if (_pass_through_by_blcok) {
+        // is same PassthroughExchanger::sink
+        vectorized::Block new_block(in_block->clone_empty());
+        new_block.swap(*in_block);
+        auto channel_id = (local_state._channel_id++) % _num_partitions;
+        _block_data_queue[channel_id].enqueue(std::move(new_block));
+        local_state._shared_state->set_ready_for_read(channel_id);
+    } else {
+        std::vector<uint32_t> channel_ids;
+        _generate_random_channel_ids(channel_ids, in_block);
+        RETURN_IF_ERROR(ShuffleExchanger::_split_rows(state, channel_ids.data(), in_block,
+                                                      source_state, local_state));
+    }
+    return Status::OK();
+}
+
+void AdaptivePassthroughExchanger::_generate_random_channel_ids(std::vector<uint32_t>& channel_ids,
+                                                                vectorized::Block* block) {
+    const auto num_rows = block->rows();
+    channel_ids.resize(num_rows, 0);
+    if (num_rows <= _num_partitions) {
+        std::iota(channel_ids.begin(), channel_ids.end(), 0);
+    } else {
+        size_t i = 0;
+        for (; i < num_rows - _num_partitions; i += _num_partitions) {
+            std::iota(channel_ids.begin() + i, channel_ids.begin() + i + _num_partitions, 0);
+        }
+        if (i < num_rows - 1) {
+            std::iota(channel_ids.begin() + i, channel_ids.end(), 0);
+        }
+    }
 }
 
 } // namespace doris::pipeline

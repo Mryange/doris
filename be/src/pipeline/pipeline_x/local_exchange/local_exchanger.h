@@ -17,6 +17,8 @@
 
 #pragma once
 
+#include <atomic>
+#include <cstddef>
 #include "pipeline/pipeline_x/dependency.h"
 #include "pipeline/pipeline_x/operator.h"
 
@@ -101,4 +103,27 @@ private:
     std::vector<moodycamel::ConcurrentQueue<vectorized::Block>> _data_queue;
 };
 
+class AdaptivePassthroughExchanger final : public ShuffleExchanger {
+public:
+    ENABLE_FACTORY_CREATOR(AdaptivePassthroughExchanger);
+    AdaptivePassthroughExchanger(int running_sink_operators, int num_partitions)
+            : ShuffleExchanger(running_sink_operators, num_partitions) {
+        _block_data_queue.resize(num_partitions);
+    };
+    ~AdaptivePassthroughExchanger() override = default;
+    Status sink(RuntimeState* state, vectorized::Block* in_block, SourceState source_state,
+                LocalExchangeSinkLocalState& local_state) override;
+
+    Status get_block(RuntimeState* state, vectorized::Block* block, SourceState& source_state,
+                     LocalExchangeSourceLocalState& local_state) override;
+    ExchangeType get_type() const override { return ExchangeType::ADAPTIVE_PASSTHROUGH; }
+
+private:
+    void _generate_random_channel_ids(std::vector<uint32_t>& channel_ids, vectorized::Block* block);
+
+    std::atomic_int32_t _split_by_rows_block;
+    std::atomic_bool _pass_through_by_blcok;
+
+    std::vector<moodycamel::ConcurrentQueue<vectorized::Block>> _block_data_queue;
+};
 } // namespace doris::pipeline
