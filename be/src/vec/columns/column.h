@@ -100,6 +100,9 @@ public:
       */
     virtual Ptr convert_to_full_column_if_const() const { return get_ptr(); }
 
+    virtual MutablePtr convert_to_full_column_if_const()  { return get_ptr(); }
+
+
     /// If column isn't ColumnLowCardinality, return itself.
     /// If column is ColumnLowCardinality, transforms is to full column.
     virtual Ptr convert_to_full_column_if_low_cardinality() const { return get_ptr(); }

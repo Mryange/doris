@@ -167,30 +167,40 @@ Status OperatorXBase::do_projections(RuntimeState* state, vectorized::Block* ori
     SCOPED_TIMER(local_state->exec_time_counter());
     SCOPED_TIMER(local_state->_projection_timer);
     using namespace vectorized;
-    vectorized::MutableBlock mutable_block =
+    vectorized::MutableBlock mutable_output_block =
             vectorized::VectorizedUtils::build_mutable_mem_reuse_block(output_block,
                                                                        *_output_row_descriptor);
     auto rows = origin_block->rows();
 
     if (rows != 0) {
-        auto& mutable_columns = mutable_block.mutable_columns();
-        DCHECK(mutable_columns.size() == local_state->_projections.size());
-        for (int i = 0; i < mutable_columns.size(); ++i) {
-            auto result_column_id = -1;
+        auto& mutable_output_columns = mutable_output_block.mutable_columns();
+        DCHECK(mutable_output_columns.size() == local_state->_projections.size());
+        std::vector<int>result_column_ids;
+        for (int i = 0; i < mutable_output_columns.size(); ++i) {
+            int result_column_id = -1;
             RETURN_IF_ERROR(local_state->_projections[i]->execute(origin_block, &result_column_id));
-            auto column_ptr = origin_block->get_by_position(result_column_id)
-                                      .column->convert_to_full_column_if_const();
-            //TODO: this is a quick fix, we need a new function like "change_to_nullable" to do it
-            if (mutable_columns[i]->is_nullable() xor column_ptr->is_nullable()) {
-                DCHECK(mutable_columns[i]->is_nullable() && !column_ptr->is_nullable());
-                reinterpret_cast<ColumnNullable*>(mutable_columns[i].get())
+            result_column_ids.push_back(result_column_id);
+        }
+        vectorized::MutableBlock  mutable_origin_block = std::move(*origin_block);
+        auto& mutable_origin_columns = mutable_origin_block.mutable_columns();
+        for (int i = 0; i < mutable_output_columns.size(); ++i) {
+            int result_column_id = result_column_ids[i];
+            auto column_ptr = mutable_origin_columns[result_column_id]->convert_to_full_column_if_const();
+            if (mutable_output_columns[i]->is_nullable() xor column_ptr->is_nullable()) {
+                DCHECK(mutable_output_columns[i]->is_nullable() && !column_ptr->is_nullable());
+                reinterpret_cast<ColumnNullable*>(mutable_output_columns[i].get())
                         ->insert_range_from_not_nullable(*column_ptr, 0, rows);
             } else {
-                mutable_columns[i]->insert_range_from(*column_ptr, 0, rows);
+                mutable_output_columns[i].swap(column_ptr);
             }
         }
-        DCHECK(mutable_block.rows() == rows);
-        output_block->set_columns(std::move(mutable_columns));
+
+
+        
+
+
+        DCHECK(mutable_output_block.rows() == rows);
+        output_block->set_columns(std::move(mutable_output_columns));
     }
 
     return Status::OK();
