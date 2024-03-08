@@ -98,7 +98,7 @@ Status VDataStreamRecvr::SenderQueue::_inner_get_batch_without_lock(Block* block
 
     DCHECK(!_block_queue.empty());
     auto [next_block, block_byte_size] = std::move(_block_queue.front());
-    _recvr->update_blocks_memory_usage(-block_byte_size);
+    update_blocks_memory_usage(-block_byte_size);
     _block_queue.pop_front();
     _record_debug_info();
     if (_block_queue.empty() && _dependency) {
@@ -202,7 +202,7 @@ Status VDataStreamRecvr::SenderQueue::add_block(const PBlock& pblock, int be_num
         _pending_closures.emplace_back(*done, monotonicStopWatch);
         *done = nullptr;
     }
-    _recvr->update_blocks_memory_usage(block_byte_size);
+    update_blocks_memory_usage(block_byte_size);
     _data_arrival_cv.notify_one();
     return Status::OK();
 }
@@ -249,7 +249,7 @@ void VDataStreamRecvr::SenderQueue::add_block(Block* block, bool use_move) {
     // should be done before the following logic, because the _lock will be released
     // by `iter->second->wait(l)`, after `iter->second->wait(l)` returns, _recvr may
     // have been closed and resouces in _recvr are released;
-    _recvr->update_blocks_memory_usage(block_mem_size);
+    update_blocks_memory_usage(block_mem_size);
     if (_recvr->exceeds_limit(0)) {
         // yiguolei
         // It is too tricky here, if the running thread is bthread then the tid may be wrong.
@@ -485,6 +485,15 @@ void VDataStreamRecvr::cancel_stream(Status exec_status) {
     }
 }
 
+void VDataStreamRecvr::SenderQueue::update_blocks_memory_usage(int64_t size) {
+    _block_queue_mem_usage += size;
+    _recvr->update_blocks_memory_usage(size);
+    if (_block_queue_mem_usage >
+        (2ULL * config::exchg_node_buffer_size_bytes / _recvr->sender_queues().size())) {
+        _local_channel_dependency->block();
+    }
+}
+
 void VDataStreamRecvr::update_blocks_memory_usage(int64_t size) {
     _blocks_memory_usage->add(size);
     _blocks_memory_usage_current_value.fetch_add(size);
@@ -546,7 +555,7 @@ void VDataStreamRecvr::PipSenderQueue::add_block(Block* block, bool use_move) {
         _record_debug_info();
         try_set_dep_ready_without_lock();
         COUNTER_UPDATE(_recvr->_local_bytes_received_counter, block_mem_size);
-        _recvr->update_blocks_memory_usage(block_mem_size);
+        update_blocks_memory_usage(block_mem_size);
         _data_arrival_cv.notify_one();
     }
 }

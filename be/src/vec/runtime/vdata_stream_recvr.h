@@ -217,6 +217,8 @@ public:
         _dependency = dependency;
     }
 
+    void update_blocks_memory_usage(int64_t size);
+
 protected:
     friend class pipeline::ExchangeLocalState;
     Status _inner_get_batch_without_lock(Block* block, bool* eos);
@@ -276,6 +278,7 @@ protected:
     std::condition_variable _data_arrival_cv;
     std::condition_variable _data_removal_cv;
     std::list<std::pair<BlockUPtr, size_t>> _block_queue;
+    int64_t _block_queue_mem_usage = 0;
 
     bool _received_first_batch;
     // sender_id
