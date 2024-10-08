@@ -93,6 +93,9 @@ Status ExchangeSinkLocalState::init(RuntimeState* state, LocalSinkStateInfo& inf
         } else {
             channel_shared_ptrs.emplace_back(
                     channel_shared_ptrs[fragment_id_to_channel_index[fragment_instance_id.lo]]);
+            if (_part_type == TPartitionType::BUCKET_SHFFULE_HASH_PARTITIONED) {
+                channels.push_back(channel_shared_ptrs.back().get());
+            }
         }
     }
     SCOPED_CONSUME_MEM_TRACKER(_mem_tracker.get());
@@ -461,15 +464,9 @@ Status ExchangeSinkOperatorX::sink(RuntimeState* state, vectorized::Block* block
             RETURN_IF_ERROR(
                     local_state._partitioner->do_partitioning(state, block, _mem_tracker.get()));
         }
-        if (_part_type == TPartitionType::HASH_PARTITIONED) {
-            RETURN_IF_ERROR(channel_add_rows(
-                    state, local_state.channels, local_state._partition_count,
-                    local_state._partitioner->get_channel_ids().get<uint32_t>(), rows, block, eos));
-        } else {
-            RETURN_IF_ERROR(channel_add_rows(
-                    state, local_state.channel_shared_ptrs, local_state._partition_count,
-                    local_state._partitioner->get_channel_ids().get<uint32_t>(), rows, block, eos));
-        }
+        RETURN_IF_ERROR(channel_add_rows(
+                state, local_state.channels, local_state._partition_count,
+                local_state._partitioner->get_channel_ids().get<uint32_t>(), rows, block, eos));
     } else if (_part_type == TPartitionType::TABLET_SINK_SHUFFLE_PARTITIONED) {
         // check out of limit
         RETURN_IF_ERROR(local_state._send_new_partition_batch());
@@ -593,8 +590,9 @@ void ExchangeSinkLocalState::register_channels(pipeline::ExchangeSinkBuffer* buf
     }
 }
 
-template <typename Channels, typename HashValueType>
-Status ExchangeSinkOperatorX::channel_add_rows(RuntimeState* state, Channels& channels,
+template <typename HashValueType>
+Status ExchangeSinkOperatorX::channel_add_rows(RuntimeState* state,
+                                               std::vector<vectorized::PipChannel*>& channels,
                                                int num_channels,
                                                const HashValueType* __restrict channel_ids,
                                                int rows, vectorized::Block* block, bool eos) {
@@ -609,9 +607,8 @@ Status ExchangeSinkOperatorX::channel_add_rows(RuntimeState* state, Channels& ch
     return Status::OK();
 }
 
-template <typename Channels>
 Status ExchangeSinkOperatorX::channel_add_rows_with_idx(
-        RuntimeState* state, Channels& channels, int num_channels,
+        RuntimeState* state, std::vector<vectorized::PipChannel*>& channels, int num_channels,
         std::vector<std::vector<uint32_t>>& channel2rows, vectorized::Block* block, bool eos) {
     Status status = Status::OK();
     for (int i = 0; i < num_channels; ++i) {
