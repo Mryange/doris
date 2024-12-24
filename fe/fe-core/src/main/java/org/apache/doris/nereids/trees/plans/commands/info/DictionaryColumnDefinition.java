@@ -19,12 +19,16 @@ package org.apache.doris.nereids.trees.plans.commands.info;
 
 import java.util.Objects;
 
+import org.apache.doris.catalog.Type;
+
 /**
  * Definition of a dictionary column.
  */
 public class DictionaryColumnDefinition {
     private final String name;
     private final boolean isKey;
+
+    private Type type;
 
     public DictionaryColumnDefinition(String name, boolean isKey) {
         this.name = Objects.requireNonNull(name, "Column name cannot be null");
@@ -37,5 +41,13 @@ public class DictionaryColumnDefinition {
 
     public boolean isKey() {
         return isKey;
+    }
+
+    public Type getType() {
+        return type;
+    }
+
+    public void setType(Type type) {
+        this.type = type;
     }
 }

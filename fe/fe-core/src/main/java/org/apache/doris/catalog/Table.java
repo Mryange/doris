@@ -157,7 +157,7 @@ public abstract class Table extends MetaObject implements Writable, TableIf, Gso
             }
         } else {
             // Only view in with-clause have null base
-            Preconditions.checkArgument(type == TableType.VIEW, "Table has no columns");
+            Preconditions.checkArgument(type == TableType.VIEW || type == TableType.DICTIONARY, "Table has no columns");
         }
         this.rwLock = new MonitoredReentrantReadWriteLock(true);
         this.createTime = Instant.now().getEpochSecond();

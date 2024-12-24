@@ -78,11 +78,11 @@ public class DictionaryManager extends MasterDaemon implements Writable {
     }
 
     public void lockRead() {
-        lockRead();
+        lock.readLock().lock();
     }
 
     public void unlockRead() {
-        unlockRead();
+        lock.readLock().unlock();
     }
 
     public void lockWrite() {
@@ -98,7 +98,7 @@ public class DictionaryManager extends MasterDaemon implements Writable {
      * 
      * @throws DdlException if the dictionary already exists and ifNotExists is false
      */
-    public void createDictionary(CreateDictionaryInfo info) throws DdlException {
+    public Dictionary createDictionary(CreateDictionaryInfo info) throws DdlException {
         // 1. Check if dictionary already exists
         if (!info.isIfNotExists() && hasDictionary(info.getDbName(), info.getDictName())) {
             throw new DdlException(
@@ -129,6 +129,8 @@ public class DictionaryManager extends MasterDaemon implements Writable {
             });
         });
         LOG.info(sb.toString());
+
+        return dictionary;
     }
 
     /**
@@ -190,11 +192,11 @@ public class DictionaryManager extends MasterDaemon implements Writable {
         // TODO: Implement dictionary data check and update logic
         // This should:
         // 1. Check source tables for changes
-        // 2. Update dictionary data if necessary
+        // 2. scheduleDataLoad if necessary
         // 3. Handle any errors or inconsistencies
     }
 
-    private void scheduleDataLoad(Dictionary dictionary) {
+    public void scheduleDataLoad(Dictionary dictionary) {
         // TODO: Implement data load scheduling logic
         // This should:
         // 1. Create a load task

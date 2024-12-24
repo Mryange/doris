@@ -17,8 +17,10 @@
 
 package org.apache.doris.nereids.trees.plans.commands.info;
 
+import org.apache.doris.catalog.Column;
 import org.apache.doris.catalog.DatabaseIf;
 import org.apache.doris.catalog.Env;
+import org.apache.doris.catalog.Table;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.common.ErrorCode;
 import org.apache.doris.common.FeNameFormat;
@@ -32,6 +34,7 @@ import com.google.common.collect.Lists;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -99,10 +102,10 @@ public class CreateDictionaryInfo {
      * @throws DdlException
      */
     public void validate(ConnectContext ctx) throws org.apache.doris.common.AnalysisException, DdlException {
-        // 1. Check dictionary name format
+        // Check dictionary name format
         FeNameFormat.checkTableName(dictName);
 
-        // 2. Check database of dictionary exists
+        // Check database of dictionary exists
         if (Strings.isNullOrEmpty(dbName)) {
             dbName = ctx.getDatabase(); // not specified, use current database
             if (Strings.isNullOrEmpty(dbName)) {
@@ -116,7 +119,7 @@ public class CreateDictionaryInfo {
             catalog.getDbOrDdlException(dbName);
         }
 
-        // 3. Check source table legal
+        // Check source table legal
         CatalogIf<?> catalog;
         DatabaseIf<?> sourceDb;
         if (Strings.isNullOrEmpty(sourceCtlName)) {
@@ -139,7 +142,28 @@ public class CreateDictionaryInfo {
             }
         }
         sourceDb = catalog.getDbOrDdlException(sourceDbName);
-        sourceDb.getTableOrDdlException(sourceTableName);
+        // Check the column existance and set their types
+        Table table = (Table) sourceDb.getTableOrDdlException(sourceTableName);
+        validateAndSetColumnTypes(table);
+    }
+
+    private void validateAndSetColumnTypes(Table table) throws DdlException {
+        List<Column> schema = table.getFullSchema();
+        // Build a map of source table columns for quick lookup
+        Map<String, Column> sourceColumns = new HashMap<>();
+        for (Column column : schema) {
+            sourceColumns.put(column.getName().toLowerCase(), column);
+        }
+
+        // Validate each dictionary column exists in source table and set its type
+        for (DictionaryColumnDefinition columnDef : columns) {
+            Column sourceColumn = sourceColumns.get(columnDef.getName().toLowerCase());
+            if (sourceColumn == null) {
+                throw new DdlException(
+                        "Column " + columnDef.getName() + " not found in source table " + table.getName());
+            }
+            columnDef.setType(sourceColumn.getType());
+        }
     }
 
     // Getters
