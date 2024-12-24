@@ -197,9 +197,17 @@ supportedCreateStatement
         TO (user=userIdentify | ROLE roleName=identifier)
         USING LEFT_PAREN booleanExpression RIGHT_PAREN                    #createRowPolicy
     | CREATE SQL_BLOCK_RULE (IF NOT EXISTS)?
-        name=identifier properties=propertyClause?                        #createSqlBlockRule
-    | CREATE ENCRYPTKEY (IF NOT EXISTS)? multipartIdentifier AS STRING_LITERAL  #createEncryptkey
+	name = identifier properties = propertyClause?								# createSqlBlockRule
+	| CREATE ENCRYPTKEY (IF NOT EXISTS)? multipartIdentifier AS STRING_LITERAL	# createEncryptkey
+	| CREATE DICTIONARY (IF NOT EXISTS)? name = multipartIdentifier USING source = multipartIdentifier
+		LEFT_PAREN dictionaryColumnDefs RIGHT_PAREN properties=propertyClause?         # createDictionary
     ;
+
+dictionaryColumnDefs:
+	dictionaryColumnDef (COMMA dictionaryColumnDef)*;
+
+dictionaryColumnDef:
+	colName = identifier columnType = (KEY | VALUE) ;
 
 supportedAlterStatement
     : ALTER VIEW name=multipartIdentifier (LEFT_PAREN cols=simpleColumnDefs RIGHT_PAREN)?

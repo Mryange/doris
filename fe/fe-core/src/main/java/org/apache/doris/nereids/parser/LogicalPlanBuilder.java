@@ -108,6 +108,7 @@ import org.apache.doris.nereids.DorisParser.ComplexColTypeListContext;
 import org.apache.doris.nereids.DorisParser.ComplexDataTypeContext;
 import org.apache.doris.nereids.DorisParser.ConstantContext;
 import org.apache.doris.nereids.DorisParser.CreateCatalogContext;
+import org.apache.doris.nereids.DorisParser.CreateDictionaryContext;
 import org.apache.doris.nereids.DorisParser.CreateEncryptkeyContext;
 import org.apache.doris.nereids.DorisParser.CreateFileContext;
 import org.apache.doris.nereids.DorisParser.CreateMTMVContext;
@@ -125,6 +126,8 @@ import org.apache.doris.nereids.DorisParser.DataTypeWithNullableContext;
 import org.apache.doris.nereids.DorisParser.DecimalLiteralContext;
 import org.apache.doris.nereids.DorisParser.DeleteContext;
 import org.apache.doris.nereids.DorisParser.DereferenceContext;
+import org.apache.doris.nereids.DorisParser.DictionaryColumnDefContext;
+import org.apache.doris.nereids.DorisParser.DictionaryColumnDefsContext;
 import org.apache.doris.nereids.DorisParser.DropCatalogContext;
 import org.apache.doris.nereids.DorisParser.DropCatalogRecycleBinContext;
 import org.apache.doris.nereids.DorisParser.DropColumnClauseContext;
@@ -501,6 +504,7 @@ import org.apache.doris.nereids.trees.plans.commands.CleanAllProfileCommand;
 import org.apache.doris.nereids.trees.plans.commands.Command;
 import org.apache.doris.nereids.trees.plans.commands.Constraint;
 import org.apache.doris.nereids.trees.plans.commands.CreateCatalogCommand;
+import org.apache.doris.nereids.trees.plans.commands.CreateDictionaryCommand;
 import org.apache.doris.nereids.trees.plans.commands.CreateEncryptkeyCommand;
 import org.apache.doris.nereids.trees.plans.commands.CreateFileCommand;
 import org.apache.doris.nereids.trees.plans.commands.CreateJobCommand;
@@ -632,6 +636,7 @@ import org.apache.doris.nereids.trees.plans.commands.info.CreateTableLikeInfo;
 import org.apache.doris.nereids.trees.plans.commands.info.CreateViewInfo;
 import org.apache.doris.nereids.trees.plans.commands.info.DMLCommandType;
 import org.apache.doris.nereids.trees.plans.commands.info.DefaultValue;
+import org.apache.doris.nereids.trees.plans.commands.info.DictionaryColumnDefinition;
 import org.apache.doris.nereids.trees.plans.commands.info.DistributionDescriptor;
 import org.apache.doris.nereids.trees.plans.commands.info.DropColumnOp;
 import org.apache.doris.nereids.trees.plans.commands.info.DropIndexOp;
@@ -5336,6 +5341,52 @@ public class LogicalPlanBuilder extends DorisParserBaseVisitor<Object> {
         }
         return ctx.catalog != null ? new UseCommand(ctx.catalog.getText(), ctx.database.getText())
                 : new UseCommand(ctx.database.getText());
+    }
+
+    @Override
+    public LogicalPlan visitCreateDictionary(CreateDictionaryContext ctx) {
+        List<String> nameParts = visitMultipartIdentifier(ctx.name);
+        String dbName = null;
+        String dictName = null;
+        if (nameParts.size() == 1) {
+            dictName = nameParts.get(0);
+        } else if (nameParts.size() == 2) {
+            dbName = nameParts.get(0);
+            dictName = nameParts.get(1);
+        } else {
+            throw new AnalysisException("Dictionary name should be [db.]dictionary_name");
+        }
+
+        // the source tableName parts
+        String sCatalogName = null;
+        String sDbName = null;
+        String sTableName = null;
+        List<String> sourceNames = visitMultipartIdentifier(ctx.source);
+        if (sourceNames.size() == 1) {
+            sTableName = sourceNames.get(0);
+        } else if (sourceNames.size() == 2) {
+            sDbName = sourceNames.get(0);
+            sTableName = sourceNames.get(1);
+        } else if (sourceNames.size() == 3) {
+            sCatalogName = sourceNames.get(0);
+            sDbName = sourceNames.get(1);
+            sTableName = sourceNames.get(2);
+        } else {
+            throw new AnalysisException("nameParts in create table should be [ctl.][db.]tbl");
+        }
+
+        List<DictionaryColumnDefinition> columns = new ArrayList<>();
+        for (DictionaryColumnDefContext colCtx : ctx.dictionaryColumnDefs().dictionaryColumnDef()) {
+            String colName = colCtx.colName.getText();
+            boolean isKey = colCtx.columnType.getType() == DorisParser.KEY;
+            columns.add(new DictionaryColumnDefinition(colName, isKey));
+        }
+
+        Map<String, String> properties = ctx.properties != null ? Maps.newHashMap(visitPropertyClause(ctx.properties))
+                : Maps.newHashMap();
+
+        return new CreateDictionaryCommand(ctx.EXISTS() != null, // if not exists
+                dbName, dictName, sCatalogName, sDbName, sTableName, columns, properties);
     }
 }
 
