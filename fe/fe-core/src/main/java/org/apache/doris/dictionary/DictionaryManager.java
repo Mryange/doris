@@ -149,6 +149,25 @@ public class DictionaryManager extends MasterDaemon implements Writable {
     }
 
     /**
+     * Drop all dictionaries in a database. Used when dropping a database.
+     */
+    public void dropDbDictionaries(String dbName) {
+        lockWrite();
+        try {
+            // pop and save item from dictionaries
+            Map<String, Dictionary> dbDictionaries = dictionaries.remove(dbName);
+            // Log the drop operation
+            if (dbDictionaries != null) {
+                for (Map.Entry<String, Dictionary> entry : dbDictionaries.entrySet()) {
+                    Env.getCurrentEnv().getEditLog().logDropDictionary(dbName, entry.getKey());
+                }
+            }
+        } finally {
+            unlockWrite();
+        }
+    }
+
+    /**
      * Check if a dictionary exists.
      */
     public boolean hasDictionary(String dbName, String dictName) {
@@ -211,6 +230,10 @@ public class DictionaryManager extends MasterDaemon implements Writable {
             // Add to dictionaries map
             Map<String, Dictionary> dbDictionaries = dictionaries.computeIfAbsent(dictionary.getDbName(),
                     k -> Maps.newConcurrentMap());
+            if (dbDictionaries.containsKey(dictionary.getName())) {
+                LOG.warn("Dictionary {} already exists when replaying create dictionary", dictionary.getName());
+                return;
+            }
             dbDictionaries.put(dictionary.getName(), dictionary);
             uniqueId = Math.max(uniqueId, dictionary.getId());
         } finally {
@@ -227,6 +250,8 @@ public class DictionaryManager extends MasterDaemon implements Writable {
                 if (dbDictionaries.isEmpty()) {
                     dictionaries.remove(info.getDbName());
                 }
+            } else {
+                LOG.warn("Database {} does not exist when replaying drop dictionary", info.getDbName());
             }
         } finally {
             unlockWrite();

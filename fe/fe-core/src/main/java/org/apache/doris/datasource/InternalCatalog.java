@@ -556,11 +556,14 @@ public class InternalCatalog implements CatalogIf<Database> {
 
                 Env.getCurrentRecycleBin().recycleDatabase(db, tableNames, tableIds, false, stmt.isForceDrop(), 0);
                 recycleTime = Env.getCurrentRecycleBin().getRecycleTimeById(db.getId());
+
+                // 3. drop db dictionaries
+                Env.getCurrentEnv().getDictionaryManager().dropDbDictionaries(dbName);
             } finally {
                 db.writeUnlock();
             }
 
-            // 3. remove db from catalog
+            // 4. remove db from catalog
             idToDb.remove(db.getId());
             fullNameToDb.remove(db.getFullName());
             DropDbInfo info = new DropDbInfo(dbName, stmt.isForceDrop(), recycleTime);
