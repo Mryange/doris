@@ -17,11 +17,14 @@
 
 package org.apache.doris.dictionary;
 
+import org.apache.doris.catalog.Env;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.common.io.Text;
 import org.apache.doris.common.io.Writable;
 import org.apache.doris.common.util.MasterDaemon;
 import org.apache.doris.nereids.trees.plans.commands.info.CreateDictionaryInfo;
+import org.apache.doris.persist.CreateDictionaryPersistInfo;
+import org.apache.doris.persist.DropDictionaryPersistInfo;
 import org.apache.doris.persist.gson.GsonUtils;
 
 import com.google.common.collect.Maps;
@@ -106,21 +109,14 @@ public class DictionaryManager extends MasterDaemon implements Writable {
             Map<String, Dictionary> dbDictionaries = dictionaries.computeIfAbsent(info.getDbName(),
                     k -> Maps.newConcurrentMap());
             dbDictionaries.put(info.getDictName(), dictionary);
+
+            // Log the creation operation
+            Env.getCurrentEnv().getEditLog().logCreateDictionary(dictionary);
         } finally {
             unlockWrite();
         }
 
         scheduleDataLoad(dictionary);
-
-        // FIXME: 测试代码，后续删除
-        StringBuilder sb = new StringBuilder().append("zcllltest: ");
-        dictionaries.forEach((dbName, dictMap) -> {
-            dictMap.forEach((dictName, dict) -> {
-                sb.append("dbName: ").append(dbName).append(", dictName: ").append(dictName).append(", dict: ")
-                        .append(dict).append("; ");
-            });
-        });
-        LOG.info(sb.toString());
 
         return dictionary;
     }
@@ -144,6 +140,9 @@ public class DictionaryManager extends MasterDaemon implements Writable {
             if (dbDictionaries.isEmpty()) {
                 dictionaries.remove(dbName);
             }
+
+            // Log the drop operation
+            Env.getCurrentEnv().getEditLog().logDropDictionary(dbName, dictName);
         } finally {
             unlockWrite();
         }
@@ -203,6 +202,35 @@ public class DictionaryManager extends MasterDaemon implements Writable {
         // 1. Create a load task
         // 2. Submit the task to a task executor
         // 3. Monitor the task progress
+    }
+
+    public void replayCreateDictionary(CreateDictionaryPersistInfo info) {
+        Dictionary dictionary = info.getDictionary();
+        lockWrite();
+        try {
+            // Add to dictionaries map
+            Map<String, Dictionary> dbDictionaries = dictionaries.computeIfAbsent(dictionary.getDbName(),
+                    k -> Maps.newConcurrentMap());
+            dbDictionaries.put(dictionary.getName(), dictionary);
+            uniqueId = Math.max(uniqueId, dictionary.getId());
+        } finally {
+            unlockWrite();
+        }
+    }
+
+    public void replayDropDictionary(DropDictionaryPersistInfo info) {
+        lockWrite();
+        try {
+            Map<String, Dictionary> dbDictionaries = dictionaries.get(info.getDbName());
+            if (dbDictionaries != null) {
+                dbDictionaries.remove(info.getDictionaryName());
+                if (dbDictionaries.isEmpty()) {
+                    dictionaries.remove(info.getDbName());
+                }
+            }
+        } finally {
+            unlockWrite();
+        }
     }
 
     // Metadata serialization

@@ -81,9 +81,11 @@ import org.apache.doris.persist.CleanLabelOperationLog;
 import org.apache.doris.persist.CleanQueryStatsInfo;
 import org.apache.doris.persist.ColocatePersistInfo;
 import org.apache.doris.persist.ConsistencyCheckInfo;
+import org.apache.doris.persist.CreateDictionaryPersistInfo;
 import org.apache.doris.persist.CreateTableInfo;
 import org.apache.doris.persist.DatabaseInfo;
 import org.apache.doris.persist.DropDbInfo;
+import org.apache.doris.persist.DropDictionaryPersistInfo;
 import org.apache.doris.persist.DropInfo;
 import org.apache.doris.persist.DropPartitionInfo;
 import org.apache.doris.persist.DropResourceOperationLog;
@@ -952,6 +954,16 @@ public class JournalEntity implements Writable {
             // FIXME: support cloud related operation types.
             case OperationType.OP_UPDATE_CLOUD_REPLICA: {
                 data = UpdateCloudReplicaInfo.read(in);
+                isRead = true;
+                break;
+            }
+            case OperationType.OP_CREATE_DICTIONARY: {
+                data = CreateDictionaryPersistInfo.read(in);
+                isRead = true;
+                break;
+            }
+            case OperationType.OP_DROP_DICTIONARY: {
+                data = DropDictionaryPersistInfo.read(in);
                 isRead = true;
                 break;
             }

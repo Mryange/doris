@@ -39,8 +39,7 @@ public class Dictionary extends Table {
     @SerializedName(value = "dbName")
     private final String dbName;
 
-    @SerializedName(value = "dictName")
-    private final String dictName;
+    // dict name use base class's name
 
     @SerializedName(value = "sourceCtlName")
     private final String sourceCtlName;
@@ -66,26 +65,23 @@ public class Dictionary extends Table {
         LOADING, NORMAL, OUT_OF_DATE, REMOVING;
     }
 
-    private DictionaryStatus status = DictionaryStatus.NORMAL;
+    @SerializedName(value = "status")
+    private DictionaryStatus status;
 
     public Dictionary(CreateDictionaryInfo info, long uniqueId) {
         super(uniqueId, info.getDictName(), TableType.DICTIONARY, null);
         this.dbName = info.getDbName();
-        this.dictName = info.getDictName();
         this.sourceCtlName = info.getSourceCtlName();
         this.sourceDbName = info.getSourceDbName();
         this.sourceTableName = info.getSourceTableName();
         this.columns = info.getColumns();
         this.properties = info.getProperties();
         this.lastUpdateTime = createTime;
+        this.status = DictionaryStatus.NORMAL;
     }
 
     public String getDbName() {
         return dbName;
-    }
-
-    public String getDictName() {
-        return dictName;
     }
 
     public String getSourceCtlName() {
@@ -137,9 +133,9 @@ public class Dictionary extends Table {
 
     @Override
     public String toString() {
-        return "Dictionary{" + "dbName='" + dbName + '\'' + ", dictName='" + dictName + '\'' + ", sourceCtlName='"
+        return "Dictionary{" + "dbName='" + dbName + '\'' + ", dicName='" + getName() + '\'' + ", sourceCtlName='"
                 + sourceCtlName + '\'' + ", sourceDbName='" + sourceDbName + '\'' + ", sourceTableName='"
                 + sourceTableName + '\'' + ", columns=" + columns + ", properties=" + properties + ", lastUpdateTime="
-                + lastUpdateTime + '}';
+                + lastUpdateTime + ", status=" + status + '}';
     }
 }
