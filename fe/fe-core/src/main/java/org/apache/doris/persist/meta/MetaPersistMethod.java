@@ -261,10 +261,10 @@ public class MetaPersistMethod {
                         CountingDataOutputStream.class, long.class);
                 break;
             case "dictionaryManager":
-                metaPersistMethod.readMethod = Env.class.getDeclaredMethod("loadDictionaryManager", DataInputStream.class,
-                                long.class);
+                metaPersistMethod.readMethod = Env.class.getDeclaredMethod("loadDictionaryManager",
+                        DataInputStream.class, long.class);
                 metaPersistMethod.writeMethod = Env.class.getDeclaredMethod("saveDictionaryManager",
-                                CountingDataOutputStream.class, long.class);
+                        CountingDataOutputStream.class, long.class);
                 break;
             default:
                 break;

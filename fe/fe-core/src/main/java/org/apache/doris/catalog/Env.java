@@ -3385,12 +3385,6 @@ public class Env {
     }
 
     /**
-     * Create Dictionary table
-     * 
-     * @param stmt
-     */
-
-    /**
      * Adds a partition to a table
      *
      * @param db

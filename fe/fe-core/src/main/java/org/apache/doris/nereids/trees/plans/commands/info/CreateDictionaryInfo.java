@@ -62,6 +62,18 @@ public class CreateDictionaryInfo {
 
     private final Map<String, String> properties;
 
+    /**
+     * Constructor.
+     *
+     * @param ifNotExists if not exists
+     * @param dbName database name
+     * @param dictName dictionary name
+     * @param sourceCtlName source catalog name
+     * @param sourceDbName source database name
+     * @param sourceTableName source table name
+     * @param columns dictionary columns
+     * @param properties dictionary properties
+     */
     public CreateDictionaryInfo(boolean ifNotExists, String dbName, String dictName, String sourceCtlName,
             String sourceDbName, String sourceTableName, List<DictionaryColumnDefinition> columns,
             Map<String, String> properties) {
@@ -75,6 +87,11 @@ public class CreateDictionaryInfo {
         this.properties = Objects.requireNonNull(properties, "Properties cannot be null");
     }
 
+    /**
+     * Get dictionary name parts.
+     *
+     * @return list of dictionary name parts
+     */
     public List<String> getDictionaryNameParts() {
         List<String> parts = Lists.newArrayList();
         if (!Strings.isNullOrEmpty(dbName)) {
@@ -84,6 +101,11 @@ public class CreateDictionaryInfo {
         return parts;
     }
 
+    /**
+     * Get source table name parts.
+     *
+     * @return list of source table name parts
+     */
     public List<String> getSourceTableNameParts() {
         List<String> parts = Lists.newArrayList();
         if (!Strings.isNullOrEmpty(sourceCtlName)) {
@@ -98,8 +120,8 @@ public class CreateDictionaryInfo {
 
     /**
      * Validate create dictionary info. about dictionary name, source table legal.
-     * 
-     * @throws DdlException
+     *
+     * @throws DdlException if not found db
      */
     public void validate(ConnectContext ctx) throws org.apache.doris.common.AnalysisException, DdlException {
         // Check dictionary name format

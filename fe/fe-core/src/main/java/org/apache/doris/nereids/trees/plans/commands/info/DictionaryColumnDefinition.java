@@ -17,9 +17,9 @@
 
 package org.apache.doris.nereids.trees.plans.commands.info;
 
-import java.util.Objects;
-
 import org.apache.doris.catalog.Type;
+
+import java.util.Objects;
 
 /**
  * Definition of a dictionary column.

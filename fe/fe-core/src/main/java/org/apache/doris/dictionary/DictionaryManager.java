@@ -86,7 +86,7 @@ public class DictionaryManager extends MasterDaemon implements Writable {
 
     /**
      * Create a new dictionary based on the provided info.
-     * 
+     *
      * @throws DdlException if the dictionary already exists and ifNotExists is false
      */
     public Dictionary createDictionary(CreateDictionaryInfo info) throws DdlException {
@@ -123,7 +123,7 @@ public class DictionaryManager extends MasterDaemon implements Writable {
 
     /**
      * Delete a dictionary.
-     * 
+     *
      * @throws DdlException if the dictionary does not exist
      */
     public void dropDictionary(String dbName, String dictName, boolean ifExists) throws DdlException {
@@ -191,7 +191,7 @@ public class DictionaryManager extends MasterDaemon implements Writable {
 
     /**
      * Get a dictionary.
-     * 
+     *
      * @throws DdlException if the dictionary does not exist
      */
     public Dictionary getDictionary(String dbName, String dictName) throws DdlException {
