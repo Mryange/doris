@@ -303,6 +303,7 @@ supportedShowStatement
         (LIKE STRING_LITERAL)?                                                      #showTableCreation
     | SHOW TABLET STORAGE FORMAT VERBOSE?                                           #showTabletStorageFormat
     | SHOW QUERY PROFILE queryIdPath=STRING_LITERAL                                 #showQueryProfile
+    | SHOW DICTIONARIES                                                             #showDictionaries
     ;
 
 supportedLoadStatement

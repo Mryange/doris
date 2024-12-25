@@ -48,23 +48,11 @@ public class DictionaryManager extends MasterDaemon implements Writable {
     @SerializedName(value = "d")
     private Map<String, Map<String, Dictionary>> dictionaries = Maps.newConcurrentMap();
 
-    private static volatile DictionaryManager INSTANCE = null;
-
+    @SerializedName(value = "i")
     private long uniqueId = 0;
 
-    private DictionaryManager() {
+    public DictionaryManager() {
         super("Dictionary Manager", 10 * 60 * 1000); // run every 10 minutes
-    }
-
-    public static DictionaryManager getInstance() {
-        if (INSTANCE == null) {
-            synchronized (DictionaryManager.class) {
-                if (INSTANCE == null) {
-                    INSTANCE = new DictionaryManager();
-                }
-            }
-        }
-        return INSTANCE;
     }
 
     @Override
@@ -100,9 +88,13 @@ public class DictionaryManager extends MasterDaemon implements Writable {
      */
     public Dictionary createDictionary(CreateDictionaryInfo info) throws DdlException {
         // 1. Check if dictionary already exists
-        if (!info.isIfNotExists() && hasDictionary(info.getDbName(), info.getDictName())) {
-            throw new DdlException(
-                    "Dictionary " + info.getDictName() + " already exists in database " + info.getDbName());
+        if (hasDictionary(info.getDbName(), info.getDictName())) {
+            if (info.isIfNotExists()) {
+                return getDictionary(info.getDbName(), info.getDictName());
+            } else {
+                throw new DdlException(
+                        "Dictionary " + info.getDictName() + " already exists in database " + info.getDbName());
+            }
         }
 
         Dictionary dictionary;
@@ -165,6 +157,15 @@ public class DictionaryManager extends MasterDaemon implements Writable {
         try {
             Map<String, Dictionary> dbDictionaries = dictionaries.get(dbName);
             return dbDictionaries != null && dbDictionaries.containsKey(dictName);
+        } finally {
+            unlockRead();
+        }
+    }
+
+    public Map<String, Dictionary> getDictionaries(String dbName) {
+        lockRead();
+        try {
+            return dictionaries.computeIfAbsent(dbName, k -> Maps.newConcurrentMap());
         } finally {
             unlockRead();
         }

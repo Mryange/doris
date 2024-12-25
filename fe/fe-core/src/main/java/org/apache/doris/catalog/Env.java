@@ -830,7 +830,7 @@ public class Env {
         this.splitSourceManager = new SplitSourceManager();
         this.globalExternalTransactionInfoMgr = new GlobalExternalTransactionInfoMgr();
         this.tokenManager = new TokenManager();
-        this.dictionaryManager = DictionaryManager.getInstance();
+        this.dictionaryManager = new DictionaryManager();
     }
 
     public static void destroyCheckpoint() {
@@ -4545,7 +4545,7 @@ public class Env {
     }
 
     public DictionaryManager getDictionaryManager() {
-        return dictionaryManager;
+        return this.dictionaryManager;
     }
 
     public long getReplayedJournalId() {

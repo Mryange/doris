@@ -73,13 +73,13 @@ public class CreateDictionaryCommand extends Command {
             createDictionaryInfo.validate(ctx);
 
             // 2. Create dictionary and save it in manager
-            Dictionary dictionary = Env.getCurrentEnv().getDictionaryManager().createDictionary(createDictionaryInfo);
+            Dictionary dictionary = ctx.getEnv().getDictionaryManager().createDictionary(createDictionaryInfo);
 
             LOG.info("Created dictionary {} in {} from {}", createDictionaryInfo.getDictName(),
                     createDictionaryInfo.getDbName(), createDictionaryInfo.getSourceTableName());
 
             // 3. Schedule the initial data load for the dictionary
-            Env.getCurrentEnv().getDictionaryManager().scheduleDataLoad(dictionary);
+            ctx.getEnv().getDictionaryManager().scheduleDataLoad(dictionary);
         } catch (Exception e) {
             LOG.warn("Failed to create dictionary: {}", e.getMessage());
             throw new AnalysisException("Failed to create dictionary: " + e.getMessage());

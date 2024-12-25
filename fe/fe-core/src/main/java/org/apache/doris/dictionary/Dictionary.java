@@ -30,7 +30,6 @@ import java.io.DataOutput;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 
 /**
  * Dictionary metadata, including its structure and data source information. saved in
@@ -62,6 +61,12 @@ public class Dictionary extends Table {
 
     @SerializedName(value = "lastUpdateTime")
     private long lastUpdateTime;
+
+    public enum DictionaryStatus {
+        LOADING, NORMAL, OUT_OF_DATE, REMOVING;
+    }
+
+    private DictionaryStatus status = DictionaryStatus.NORMAL;
 
     public Dictionary(CreateDictionaryInfo info, long uniqueId) {
         super(uniqueId, info.getDictName(), TableType.DICTIONARY, null);
@@ -111,6 +116,14 @@ public class Dictionary extends Table {
         this.lastUpdateTime = lastUpdateTime;
     }
 
+    public DictionaryStatus getStatus() {
+        return status;
+    }
+
+    public void setStatus(DictionaryStatus status) {
+        this.status = status;
+    }
+
     @Override
     public void write(DataOutput out) throws IOException {
         String json = GsonUtils.GSON.toJson(this);
@@ -120,23 +133,6 @@ public class Dictionary extends Table {
     public static Dictionary read(DataInput in) throws IOException {
         String json = Text.readString(in);
         return GsonUtils.GSON.fromJson(json, Dictionary.class);
-    }
-
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) {
-            return true;
-        }
-        if (o == null || getClass() != o.getClass()) {
-            return false;
-        }
-        Dictionary that = (Dictionary) o;
-        return Objects.equals(dbName, that.dbName) && Objects.equals(dictName, that.dictName);
-    }
-
-    @Override
-    public int hashCode() {
-        return Objects.hash(dbName, dictName);
     }
 
     @Override
