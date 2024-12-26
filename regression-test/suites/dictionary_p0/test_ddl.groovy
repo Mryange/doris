@@ -94,6 +94,50 @@ suite("test_ddl") {
         exception "mismatched input 'VARCHAR'"
     }
 
+    test { // duplicate columns
+        sql """
+        create dictionary dic1 using dc
+        (
+            k1 KEY, 
+            k0 VALUE,
+            k0 VALUE
+        )
+        properties("x"="x", "y"="y");
+        """
+        exception "Column k0 is used more than once"
+    }
+
+    test { // more than one key
+        sql """
+        create dictionary dic1 using dc
+        (
+            k0 KEY, 
+            k1 KEY
+        );
+        """
+        exception "Now only support one key column"
+    }
+
+    // complex type
+    sql """
+        create table ctype(
+            k0 int null,
+            k1 MAP<STRING, INT>
+        )
+        DISTRIBUTED BY HASH(`k0`) BUCKETS auto
+        properties("replication_num" = "1");
+    """
+    test {
+        sql """
+        create dictionary dic1 using ctype
+        (
+            k1 KEY, 
+            k0 VALUE
+        );
+        """
+        exception "Key column k1 cannot be complex type"
+    }
+
     sql """
         create dictionary dic1 using dc
         (

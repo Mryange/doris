@@ -35,8 +35,10 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.Objects;
 
 /**
@@ -164,7 +166,7 @@ public class CreateDictionaryInfo {
             }
         }
         sourceDb = catalog.getDbOrDdlException(sourceDbName);
-        // Check the column existance and set their types
+        // Check the column existance. check and set their types
         Table table = (Table) sourceDb.getTableOrDdlException(sourceTableName);
         validateAndSetColumnTypes(table);
     }
@@ -173,8 +175,14 @@ public class CreateDictionaryInfo {
         List<Column> schema = table.getFullSchema();
         // Build a map of source table columns for quick lookup
         Map<String, Column> sourceColumns = new HashMap<>();
+        Set<String> usedColNames = new HashSet<>();
         for (Column column : schema) {
             sourceColumns.put(column.getName().toLowerCase(), column);
+        }
+
+        // Validate only one Key
+        if (columns.stream().filter(DictionaryColumnDefinition::isKey).count() > 1) {
+            throw new DdlException("Now only support one key column");
         }
 
         // Validate each dictionary column exists in source table and set its type
@@ -184,7 +192,14 @@ public class CreateDictionaryInfo {
                 throw new DdlException(
                         "Column " + columnDef.getName() + " not found in source table " + table.getName());
             }
+            if (usedColNames.contains(columnDef.getName().toLowerCase())) {
+                throw new DdlException("Column " + columnDef.getName() + " is used more than once");
+            }
+            if (columnDef.isKey() && sourceColumn.getType().isComplexType()) {
+                throw new DdlException("Key column " + columnDef.getName() + " cannot be complex type");
+            }
             columnDef.setType(sourceColumn.getType());
+            usedColNames.add(sourceColumn.getName().toLowerCase());
         }
     }
 
