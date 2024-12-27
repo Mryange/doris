@@ -18,7 +18,6 @@
 package org.apache.doris.nereids.trees.plans.commands;
 
 import org.apache.doris.analysis.StmtType;
-import org.apache.doris.dictionary.Dictionary;
 import org.apache.doris.dictionary.LayoutType;
 import org.apache.doris.nereids.exceptions.AnalysisException;
 import org.apache.doris.nereids.trees.plans.PlanType;
@@ -72,14 +71,11 @@ public class CreateDictionaryCommand extends Command {
             // 1. Validate the dictionary info. names and existence.
             createDictionaryInfo.validate(ctx);
 
-            // 2. Create dictionary and save it in manager
-            Dictionary dictionary = ctx.getEnv().getDictionaryManager().createDictionary(createDictionaryInfo);
+            // 2. Create dictionary and save it in manager. it will schedule data load.
+            ctx.getEnv().getDictionaryManager().createDictionary(createDictionaryInfo);
 
             LOG.info("Created dictionary {} in {} from {}", createDictionaryInfo.getDictName(),
                     createDictionaryInfo.getDbName(), createDictionaryInfo.getSourceTableName());
-
-            // 3. Schedule the initial data load for the dictionary
-            ctx.getEnv().getDictionaryManager().scheduleDataLoad(dictionary);
         } catch (Exception e) {
             LOG.warn("Failed to create dictionary: {}", e.getMessage());
             throw new AnalysisException("Failed to create dictionary: " + e.getMessage());
