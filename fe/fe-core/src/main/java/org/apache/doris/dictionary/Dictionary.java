@@ -68,6 +68,9 @@ public class Dictionary extends Table {
     @SerializedName(value = "status")
     private DictionaryStatus status;
 
+    @SerializedName(value = "layout")
+    private final LayoutType layout;
+
     public Dictionary(CreateDictionaryInfo info, long uniqueId) {
         super(uniqueId, info.getDictName(), TableType.DICTIONARY, null);
         this.dbName = info.getDbName();
@@ -78,6 +81,7 @@ public class Dictionary extends Table {
         this.properties = info.getProperties();
         this.lastUpdateTime = createTime;
         this.status = DictionaryStatus.NORMAL;
+        this.layout = info.getLayout();
     }
 
     public String getDbName() {
@@ -120,6 +124,10 @@ public class Dictionary extends Table {
         this.status = status;
     }
 
+    public LayoutType getLayout() {
+        return layout;
+    }
+
     @Override
     public void write(DataOutput out) throws IOException {
         String json = GsonUtils.GSON.toJson(this);
@@ -133,9 +141,9 @@ public class Dictionary extends Table {
 
     @Override
     public String toString() {
-        return "Dictionary{" + "dbName='" + dbName + '\'' + ", dicName='" + getName() + '\'' + ", sourceCtlName='"
-                + sourceCtlName + '\'' + ", sourceDbName='" + sourceDbName + '\'' + ", sourceTableName='"
-                + sourceTableName + '\'' + ", columns=" + columns + ", properties=" + properties + ", lastUpdateTime="
-                + lastUpdateTime + ", status=" + status + '}';
+        return "Dictionary{" + "dbName='" + dbName + '\'' + ", sourceCtlName='" + sourceCtlName + '\''
+                + ", sourceDbName='" + sourceDbName + '\'' + ", sourceTableName='" + sourceTableName + '\''
+                + ", columns=" + columns + ", properties=" + properties + ", lastUpdateTime=" + lastUpdateTime
+                + ", status=" + status + ", layout=" + layout + '}';
     }
 }

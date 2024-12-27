@@ -36,6 +36,7 @@ import java.util.Map;
 
 /**
  * Show dictionaries command.
+ * TODO: print verbose information for dictionary. include schema, layout, etc.
  */
 public class ShowDictionariesCommand extends ShowCommand {
     public ShowDictionariesCommand() {

@@ -19,6 +19,7 @@ package org.apache.doris.nereids.trees.plans.commands;
 
 import org.apache.doris.analysis.StmtType;
 import org.apache.doris.dictionary.Dictionary;
+import org.apache.doris.dictionary.LayoutType;
 import org.apache.doris.nereids.exceptions.AnalysisException;
 import org.apache.doris.nereids.trees.plans.PlanType;
 import org.apache.doris.nereids.trees.plans.commands.info.CreateDictionaryInfo;
@@ -44,10 +45,10 @@ public class CreateDictionaryCommand extends Command {
 
     public CreateDictionaryCommand(boolean ifNotExists, String dbName, String dictName, String sourceCtlName,
             String sourceDbName, String sourceTableName, List<DictionaryColumnDefinition> columns,
-            Map<String, String> properties) {
+            Map<String, String> properties, LayoutType layout) {
         super(PlanType.CREATE_DICTIONARY_COMMAND);
         this.createDictionaryInfo = new CreateDictionaryInfo(ifNotExists, dbName, dictName, sourceCtlName, sourceDbName,
-                sourceTableName, columns, properties);
+                sourceTableName, columns, properties, layout);
     }
 
     public CreateDictionaryCommand(CreateDictionaryInfo createDictionaryInfo) {

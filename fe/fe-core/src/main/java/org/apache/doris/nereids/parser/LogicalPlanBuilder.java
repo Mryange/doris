@@ -39,6 +39,7 @@ import org.apache.doris.catalog.ScalarType;
 import org.apache.doris.common.Config;
 import org.apache.doris.common.FeConstants;
 import org.apache.doris.common.Pair;
+import org.apache.doris.dictionary.LayoutType;
 import org.apache.doris.datasource.InternalCatalog;
 import org.apache.doris.job.common.IntervalUnit;
 import org.apache.doris.load.loadv2.LoadTask;
@@ -5391,8 +5392,15 @@ public class LogicalPlanBuilder extends DorisParserBaseVisitor<Object> {
         Map<String, String> properties = ctx.properties != null ? Maps.newHashMap(visitPropertyClause(ctx.properties))
                 : Maps.newHashMap();
 
+        LayoutType layoutType;
+        try {
+            layoutType = LayoutType.of(ctx.layoutType.getText());
+        } catch (IllegalArgumentException e) {
+            throw new AnalysisException(
+                    "Unknown layout type: " + ctx.layoutType.getText() + ". must be IP_TRIE or HASH_MAP");
+        }
+
         return new CreateDictionaryCommand(ctx.EXISTS() != null, // if not exists
-                dbName, dictName, sCatalogName, sDbName, sTableName, columns, properties);
+                dbName, dictName, sCatalogName, sDbName, sTableName, columns, properties, layoutType);
     }
 }
-

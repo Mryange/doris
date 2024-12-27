@@ -26,6 +26,7 @@ import org.apache.doris.common.ErrorCode;
 import org.apache.doris.common.FeNameFormat;
 import org.apache.doris.datasource.CatalogIf;
 import org.apache.doris.datasource.InternalCatalog;
+import org.apache.doris.dictionary.LayoutType;
 import org.apache.doris.nereids.exceptions.AnalysisException;
 import org.apache.doris.qe.ConnectContext;
 
@@ -64,21 +65,14 @@ public class CreateDictionaryInfo {
 
     private final Map<String, String> properties;
 
+    private final LayoutType layout;
+
     /**
      * Constructor.
-     *
-     * @param ifNotExists if not exists
-     * @param dbName database name
-     * @param dictName dictionary name
-     * @param sourceCtlName source catalog name
-     * @param sourceDbName source database name
-     * @param sourceTableName source table name
-     * @param columns dictionary columns
-     * @param properties dictionary properties
      */
     public CreateDictionaryInfo(boolean ifNotExists, String dbName, String dictName, String sourceCtlName,
             String sourceDbName, String sourceTableName, List<DictionaryColumnDefinition> columns,
-            Map<String, String> properties) {
+            Map<String, String> properties, LayoutType layout) {
         this.ifNotExists = ifNotExists;
         this.dbName = dbName;
         this.dictName = Objects.requireNonNull(dictName, "Dictionary name cannot be null");
@@ -87,6 +81,7 @@ public class CreateDictionaryInfo {
         this.sourceTableName = Objects.requireNonNull(sourceTableName, "Source table name cannot be null");
         this.columns = Objects.requireNonNull(columns, "Columns cannot be null");
         this.properties = Objects.requireNonNull(properties, "Properties cannot be null");
+        this.layout = layout;
     }
 
     /**
@@ -195,11 +190,22 @@ public class CreateDictionaryInfo {
             if (usedColNames.contains(columnDef.getName().toLowerCase())) {
                 throw new DdlException("Column " + columnDef.getName() + " is used more than once");
             }
-            if (columnDef.isKey() && sourceColumn.getType().isComplexType()) {
-                throw new DdlException("Key column " + columnDef.getName() + " cannot be complex type");
+            if (columnDef.isKey()) {
+                validateKeyColumn(sourceColumn);
             }
             columnDef.setType(sourceColumn.getType());
             usedColNames.add(sourceColumn.getName().toLowerCase());
+        }
+    }
+
+    private void validateKeyColumn(Column source) throws DdlException {
+        if (source.getType().isComplexType()) {
+            throw new DdlException("Key column " + source.getName() + " cannot be complex type");
+        }
+        if (getLayout() == LayoutType.IP_TRIE) {
+            if (!source.getType().isVarcharOrStringType()) {
+                throw new DdlException("Key column " + source.getName() + " must be string type for IP_TRIE layout");
+            }
         }
     }
 
@@ -234,5 +240,9 @@ public class CreateDictionaryInfo {
 
     public Map<String, String> getProperties() {
         return properties;
+    }
+
+    public LayoutType getLayout() {
+        return layout;
     }
 }

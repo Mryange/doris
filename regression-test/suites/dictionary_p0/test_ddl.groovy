@@ -36,7 +36,7 @@ suite("test_ddl") {
             col1 KEY, 
             col2 VALUE,
             col3 VALUE
-        )
+        )LAYOUT(HASH_MAP)
         properties("x"="x", "y"="y");
         """
         exception "mismatched input"
@@ -49,7 +49,7 @@ suite("test_ddl") {
             col1 KEY, 
             col2 VALUE,
             col3 VALUE
-        )
+        )LAYOUT(HASH_MAP)
         ("x"="x", "y"="y");
         """
         exception "mismatched input"
@@ -62,7 +62,7 @@ suite("test_ddl") {
             col1 KEY, 
             col2 VALUE,
             col3 VALUE
-        )
+        )LAYOUT(HASH_MAP)
         properties("x"="x", "y"="y");
         """
         exception "Unknown table"
@@ -75,7 +75,7 @@ suite("test_ddl") {
             col1 KEY, 
             col2 VALUE,
             col3 VALUE
-        )
+        )LAYOUT(HASH_MAP)
         properties("x"="x", "y"="y");
         """
         exception "Column col1 not found in source table dc"
@@ -88,7 +88,7 @@ suite("test_ddl") {
             k0 KEY, 
             k1 VALUE,
             k1 VARCHAR
-        )
+        )LAYOUT(HASH_MAP)
         properties("x"="x", "y"="y");
         """
         exception "mismatched input 'VARCHAR'"
@@ -101,7 +101,7 @@ suite("test_ddl") {
             k1 KEY, 
             k0 VALUE,
             k0 VALUE
-        )
+        )LAYOUT(HASH_MAP)
         properties("x"="x", "y"="y");
         """
         exception "Column k0 is used more than once"
@@ -113,7 +113,7 @@ suite("test_ddl") {
         (
             k0 KEY, 
             k1 KEY
-        );
+        )LAYOUT(HASH_MAP);
         """
         exception "Now only support one key column"
     }
@@ -133,22 +133,54 @@ suite("test_ddl") {
         (
             k1 KEY, 
             k0 VALUE
-        );
+        )LAYOUT(HASH_MAP);
         """
         exception "Key column k1 cannot be complex type"
     }
 
+    test { // wrong type
+        sql """
+        create dictionary dic1 using dc
+        (
+            k1 KEY, 
+            k0 VALUE
+        )LAYOUT(xxx);
+        """
+        exception "mismatched input 'xxx'"
+    }
+
+    test { // wrong type for ip_trie
+        sql """
+        create dictionary dic_trie2 using dc
+        (
+            k0 KEY, 
+            k1 VALUE
+        )LAYOUT(IP_TRIE);
+        """
+        exception "Key column k0 must be string type for IP_TRIE layout"
+    }
+
+    // normal
     sql """
         create dictionary dic1 using dc
         (
             k1 KEY, 
             k0 VALUE
-        )
+        )LAYOUT(HASH_MAP)
         properties("x"="x", "y"="y");
     """
     def origin_res = (sql "show dictionaries")[0]
     log.info(origin_res.toString())
     assertTrue(origin_res[1] == "dic1" && origin_res[2] == "NORMAL")
+
+    // normal ip_trie
+    sql """
+        create dictionary dic_trie using dc
+        (
+            k1 KEY, 
+            k0 VALUE
+        )LAYOUT(IP_TRIE);
+    """
 
     test { // duplicate dictionary
         sql """
@@ -156,7 +188,7 @@ suite("test_ddl") {
         (
             k1 KEY, 
             k0 VALUE
-        )
+        )LAYOUT(HASH_MAP)
         properties("x"="x", "y"="y");
         """
         exception "Dictionary dic1 already exists in database test"

@@ -199,8 +199,11 @@ supportedCreateStatement
     | CREATE SQL_BLOCK_RULE (IF NOT EXISTS)?
 	name = identifier properties = propertyClause?								# createSqlBlockRule
 	| CREATE ENCRYPTKEY (IF NOT EXISTS)? multipartIdentifier AS STRING_LITERAL	# createEncryptkey
-	| CREATE DICTIONARY (IF NOT EXISTS)? name = multipartIdentifier USING source = multipartIdentifier
-		LEFT_PAREN dictionaryColumnDefs RIGHT_PAREN properties=propertyClause?         # createDictionary
+	| CREATE DICTIONARY (IF NOT EXISTS)? name = multipartIdentifier
+		USING source = multipartIdentifier
+		LEFT_PAREN dictionaryColumnDefs RIGHT_PAREN
+        LAYOUT LEFT_PAREN layoutType=(IP_TRIE | HASH_MAP) RIGHT_PAREN
+        properties=propertyClause?         # createDictionary
     ;
 
 dictionaryColumnDefs:
@@ -884,7 +887,7 @@ supportedUnsetStatement
 supportedUseStatement
      : SWITCH catalog=identifier                                                      #switchCatalog
      | USE (catalog=identifier DOT)? database=identifier                              #useDatabase
-     ;
+    ;
 
 unsupportedUseStatement
     : USE ((catalog=identifier DOT)? database=identifier)? ATSIGN cluster=identifier #useCloudCluster
@@ -1865,6 +1868,8 @@ nonReserved
     | DEMAND
     | DIAGNOSE
     | DIAGNOSIS
+    | DICTIONARIES
+    | DICTIONARY
     | DISTINCTPC
     | DISTINCTPCSA
     | DO
@@ -1903,6 +1908,7 @@ nonReserved
     | GROUPING
     | GROUPS
     | HASH
+    | HASH_MAP
     | HDFS
     | HELP
     | HINT_END
@@ -1919,6 +1925,7 @@ nonReserved
     | INCREMENTAL
     | INDEXES
     | INVERTED
+    | IP_TRIE
     | IPV4
     | IPV6
     | IS_NOT_NULL_PRED
