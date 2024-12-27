@@ -132,6 +132,7 @@ import org.apache.doris.nereids.DorisParser.DropCatalogContext;
 import org.apache.doris.nereids.DorisParser.DropCatalogRecycleBinContext;
 import org.apache.doris.nereids.DorisParser.DropColumnClauseContext;
 import org.apache.doris.nereids.DorisParser.DropConstraintContext;
+import org.apache.doris.nereids.DorisParser.DropDictionaryContext;
 import org.apache.doris.nereids.DorisParser.DropEncryptkeyContext;
 import org.apache.doris.nereids.DorisParser.DropFileContext;
 import org.apache.doris.nereids.DorisParser.DropIndexClauseContext;
@@ -524,6 +525,7 @@ import org.apache.doris.nereids.trees.plans.commands.DropCatalogCommand;
 import org.apache.doris.nereids.trees.plans.commands.DropCatalogRecycleBinCommand;
 import org.apache.doris.nereids.trees.plans.commands.DropCatalogRecycleBinCommand.IdType;
 import org.apache.doris.nereids.trees.plans.commands.DropConstraintCommand;
+import org.apache.doris.nereids.trees.plans.commands.DropDictionaryCommand;
 import org.apache.doris.nereids.trees.plans.commands.DropEncryptkeyCommand;
 import org.apache.doris.nereids.trees.plans.commands.DropFileCommand;
 import org.apache.doris.nereids.trees.plans.commands.DropJobCommand;
@@ -5402,5 +5404,23 @@ public class LogicalPlanBuilder extends DorisParserBaseVisitor<Object> {
 
         return new CreateDictionaryCommand(ctx.EXISTS() != null, // if not exists
                 dbName, dictName, sCatalogName, sDbName, sTableName, columns, properties, layoutType);
+    }
+
+    public LogicalPlan visitDropDictionary(DropDictionaryContext ctx) {
+        List<String> nameParts = visitMultipartIdentifier(ctx.name);
+        if (nameParts.size() == 0 || nameParts.size() > 2) {
+            throw new AnalysisException("Dictionary name should be [db.]dictionary_name");
+        }
+        String dbName;
+        String dictName;
+        if (nameParts.size() == 1) { // only dict name
+            dbName = null;
+            dictName = nameParts.get(0);
+        } else {
+            dbName = nameParts.get(0);
+            dictName = nameParts.get(1);
+        }
+
+        return new DropDictionaryCommand(dbName, dictName, ctx.EXISTS() != null);
     }
 }

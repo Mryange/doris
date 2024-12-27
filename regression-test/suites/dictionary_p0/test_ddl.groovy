@@ -193,6 +193,11 @@ suite("test_ddl") {
         """
         exception "Dictionary dic1 already exists in database test"
     }
+    
+    // test drop
+    sql "drop dictionary dic1"
+    origin_res = sql "show dictionaries"
+    assertTrue(origin_res.size() == 1)
 
     // drop databases
     sql "use mysql"

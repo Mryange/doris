@@ -17,6 +17,7 @@
 
 package org.apache.doris.dictionary;
 
+import org.apache.commons.compress.utils.Lists;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.common.io.Text;
@@ -35,6 +36,7 @@ import org.apache.logging.log4j.Logger;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -115,7 +117,8 @@ public class DictionaryManager extends MasterDaemon implements Writable {
         } finally {
             unlockWrite();
         }
-
+        // The data in BE doesn't always have the same situation with FE(think BE restart). So the data load don't need
+        // transaction safety. It rely on periodic check and update.
         scheduleDataLoad(dictionary);
 
         return dictionary;
@@ -128,6 +131,7 @@ public class DictionaryManager extends MasterDaemon implements Writable {
      */
     public void dropDictionary(String dbName, String dictName, boolean ifExists) throws DdlException {
         lockWrite();
+        Dictionary dic = null;
         try {
             Map<String, Dictionary> dbDictionaries = dictionaries.get(dbName);
             if (dbDictionaries == null || !dbDictionaries.containsKey(dictName)) {
@@ -136,16 +140,16 @@ public class DictionaryManager extends MasterDaemon implements Writable {
                 }
                 return;
             }
-            dbDictionaries.remove(dictName);
-            if (dbDictionaries.isEmpty()) {
-                dictionaries.remove(dbName);
-            }
+            dic = dbDictionaries.remove(dictName);
 
             // Log the drop operation
             Env.getCurrentEnv().getEditLog().logDropDictionary(dbName, dictName);
         } finally {
             unlockWrite();
         }
+        // The data in BE doesn't always have the same situation with FE(think FE crash). But we have periodic report
+        // so that we can drop unknown dictionary at that time.
+        scheduleDataUnload(dic);
     }
 
     /**
@@ -153,17 +157,22 @@ public class DictionaryManager extends MasterDaemon implements Writable {
      */
     public void dropDbDictionaries(String dbName) {
         lockWrite();
+        List<Dictionary> droppedDictionaries = Lists.newArrayList();
         try {
             // pop and save item from dictionaries
             Map<String, Dictionary> dbDictionaries = dictionaries.remove(dbName);
             // Log the drop operation
             if (dbDictionaries != null) {
                 for (Map.Entry<String, Dictionary> entry : dbDictionaries.entrySet()) {
+                    droppedDictionaries.add(entry.getValue());
                     Env.getCurrentEnv().getEditLog().logDropDictionary(dbName, entry.getKey());
                 }
             }
         } finally {
             unlockWrite();
+        }
+        for (Dictionary dictionary : droppedDictionaries) {
+            scheduleDataUnload(dictionary);
         }
     }
 
@@ -215,10 +224,21 @@ public class DictionaryManager extends MasterDaemon implements Writable {
         // 3. Handle any errors or inconsistencies
     }
 
+    /// data load and unload are also used for dictionary data check and update to keep data consistency between BE
+    /// and FE. So they are not private.
+
     public void scheduleDataLoad(Dictionary dictionary) {
         // TODO: Implement data load scheduling logic
         // This should:
         // 1. Create a load task
+        // 2. Submit the task to a task executor
+        // 3. Monitor the task progress
+    }
+
+    public void scheduleDataUnload(Dictionary dictionary) {
+        // TODO: Implement data unload scheduling logic
+        // This should:
+        // 1. Create an unload task
         // 2. Submit the task to a task executor
         // 3. Monitor the task progress
     }
