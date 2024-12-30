@@ -21,6 +21,7 @@ import org.apache.doris.catalog.Table;
 import org.apache.doris.common.io.Text;
 import org.apache.doris.nereids.trees.plans.commands.info.CreateDictionaryInfo;
 import org.apache.doris.nereids.trees.plans.commands.info.DictionaryColumnDefinition;
+import org.apache.doris.nereids.types.DataType;
 import org.apache.doris.persist.gson.GsonUtils;
 
 import com.google.gson.annotations.SerializedName;
@@ -102,6 +103,15 @@ public class Dictionary extends Table {
 
     public List<DictionaryColumnDefinition> getDicColumns() {
         return columns;
+    }
+
+    public DataType getColumnType(String columnName) {
+        for (DictionaryColumnDefinition column : columns) {
+            if (column.getName().equalsIgnoreCase(columnName)) {
+                return DataType.fromCatalogType(column.getType());
+            }
+        }
+        throw new IllegalArgumentException("Column " + columnName + " not found in dictionary " + getName());
     }
 
     public Map<String, String> getProperties() {
