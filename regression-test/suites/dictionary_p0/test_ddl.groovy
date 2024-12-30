@@ -22,8 +22,8 @@ suite("test_ddl") {
 
     sql """
         create table dc(
-            k0 datetime(6) null,
-            k1 varchar
+            k0 datetime(6) not null,
+            k1 varchar not null
         )
         DISTRIBUTED BY HASH(`k0`) BUCKETS auto
         properties("replication_num" = "1");
@@ -138,6 +138,50 @@ suite("test_ddl") {
         exception "Key column k1 cannot be complex type"
     }
 
+    // nullable column test base table
+    sql """
+        create table nullable_table(
+            k1 varchar(32) null,
+            k2 varchar(32) not null,
+            v1 varchar(64) null,
+            v2 varchar(64) not null
+        )
+        DISTRIBUTED BY HASH(`k2`) BUCKETS auto
+        properties("replication_num" = "1");
+    """
+
+    test { // test nullable key column
+        sql """
+        create dictionary dic_null_key using nullable_table
+        (
+            k1 KEY,
+            v1 VALUE
+        )LAYOUT(HASH_MAP);
+        """
+        exception "Key column k1 cannot be nullable"
+    }
+
+    test { // test nullable value column in IP_TRIE
+        sql """
+        create dictionary dic_null_value using nullable_table
+        (
+            k2 KEY,
+            v1 VALUE
+        )LAYOUT(IP_TRIE);
+        """
+        exception "Column v1 cannot be nullable for IP_TRIE layout"
+    }
+
+    // test right nullable
+    sql """
+    create dictionary dic_not_null using nullable_table
+    (
+        k2 KEY,
+        v2 VALUE
+    )LAYOUT(IP_TRIE);
+    """
+    sql "drop dictionary dic_not_null"
+
     test { // wrong type
         sql """
         create dictionary dic1 using dc
@@ -157,7 +201,7 @@ suite("test_ddl") {
             k1 VALUE
         )LAYOUT(IP_TRIE);
         """
-        exception "Key column k0 must be string type for IP_TRIE layout"
+        exception "Key column k0 must be String type for IP_TRIE layout"
     }
 
     // normal
