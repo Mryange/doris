@@ -202,7 +202,7 @@ supportedCreateStatement
 	| CREATE DICTIONARY (IF NOT EXISTS)? name = multipartIdentifier
 		USING source = multipartIdentifier
 		LEFT_PAREN dictionaryColumnDefs RIGHT_PAREN
-        LAYOUT LEFT_PAREN layoutType=(IP_TRIE | HASH_MAP) RIGHT_PAREN
+        LAYOUT LEFT_PAREN layoutType=identifier RIGHT_PAREN
         properties=propertyClause?         # createDictionary
     ;
 

@@ -146,7 +146,7 @@ suite("test_ddl") {
             k0 VALUE
         )LAYOUT(xxx);
         """
-        exception "mismatched input 'xxx'"
+        exception "Unknown layout type: xxx. must be IP_TRIE or HASH_MAP"
     }
 
     test { // wrong type for ip_trie
