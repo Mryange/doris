@@ -20,9 +20,11 @@ package org.apache.doris.nereids.trees.expressions.functions.scalar;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.catalog.FunctionSignature;
 import org.apache.doris.common.DdlException;
+import org.apache.doris.common.Pair;
 import org.apache.doris.dictionary.Dictionary;
 import org.apache.doris.dictionary.DictionaryManager;
 import org.apache.doris.nereids.exceptions.AnalysisException;
+import org.apache.doris.nereids.glue.translator.PlanTranslatorContext;
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.functions.AlwaysNotNullable;
 import org.apache.doris.nereids.trees.expressions.functions.CustomSignature;
@@ -39,7 +41,7 @@ import java.util.List;
  */
 public class DictGet extends ScalarFunction implements CustomSignature, AlwaysNotNullable {
     /**
-     * constructor with 4 arguments. (1. dbName.dictName, 2. queryKeyColumnName, 3. queryKeyValue)
+     * constructor with 3 arguments. (1. dbName.dictName, 2. queryKeyColumnName, 3. queryKeyValue)
      */
     public DictGet(Expression arg0, Expression arg1, Expression arg2) {
         super("dict_get", arg0, arg1, arg2);
@@ -53,15 +55,6 @@ public class DictGet extends ScalarFunction implements CustomSignature, AlwaysNo
         if (!getArgument(0).isLiteral() || !getArgument(1).isLiteral()) {
             throw new AnalysisException("dict_get() requires literal arguments");
         }
-        if (((Literal) getArgument(0)).getStringValue().split("\\.").length != 2) {
-            throw new AnalysisException("dict_get() requires dbName.dictName as first argument");
-        }
-        String[] firstNames = ((Literal) getArgument(0)).getStringValue().split("\\."); // db.dict
-        String dbName = firstNames[0];
-        String dictName = firstNames[1];
-        if (dbName.length() == 0 || dictName.length() == 0) {
-            throw new AnalysisException("dict_get() requires dbName.dictName as first argument");
-        }
     }
 
     @Override
@@ -71,11 +64,17 @@ public class DictGet extends ScalarFunction implements CustomSignature, AlwaysNo
 
     @Override
     public FunctionSignature customSignature() {
+        // FAKE return type here, will be replaced by real type in visitDictGet
+        return FunctionSignature.ret(getArgumentType(0)).args(getArgumentsTypes().toArray(new DataType[0]));
+    }
+
+    // use for visitDictGet to get real signature
+    public Pair<FunctionSignature, Dictionary> customSignatureDict(PlanTranslatorContext context) {
         DictionaryManager dicMgr = Env.getCurrentEnv().getDictionaryManager();
-        String[] firstNames = ((Literal) getArgument(0)).getStringValue().split("\\."); // db.dict
-        String dbName = firstNames[0];
-        String dictName = firstNames[1];
+        String dictName = ((Literal) getArgument(0)).getStringValue();
         String colName = ((Literal) getArgument(1)).getStringValue();
+
+        String dbName = context.getConnectContext().getDatabase();
 
         Dictionary dictionary;
         try {
@@ -84,8 +83,8 @@ public class DictGet extends ScalarFunction implements CustomSignature, AlwaysNo
             throw new AnalysisException("Dictionary " + dictName + " not found in database " + dbName);
         }
 
-        return FunctionSignature.ret(dictionary.getColumnType(colName))
-                .args(getArgumentsTypes().toArray(new DataType[0]));
+        return Pair.of(FunctionSignature.ret(dictionary.getColumnType(colName))
+                .args(getArgumentsTypes().toArray(new DataType[0])), dictionary); // didn't change arguments
     }
 
     /**

@@ -63,7 +63,10 @@ public class Dictionary extends Table {
     private long lastUpdateTime;
 
     public enum DictionaryStatus {
-        LOADING, NORMAL, OUT_OF_DATE, REMOVING;
+        LOADING, // wait load task finishs
+        NORMAL, // normal status
+        OUT_OF_DATE, // wait load task be scheduled
+        REMOVING; // wait unload task be scheduled and finish
     }
 
     @SerializedName(value = "status")
@@ -71,6 +74,9 @@ public class Dictionary extends Table {
 
     @SerializedName(value = "layout")
     private final LayoutType layout;
+
+    @SerializedName(value = "version")
+    private long version; // every time dictionary is updated, version will increase by 1
 
     public Dictionary(CreateDictionaryInfo info, long uniqueId) {
         super(uniqueId, info.getDictName(), TableType.DICTIONARY, null);
@@ -83,6 +89,7 @@ public class Dictionary extends Table {
         this.lastUpdateTime = createTime;
         this.status = DictionaryStatus.NORMAL;
         this.layout = info.getLayout();
+        this.version = 1;
     }
 
     public String getDbName() {
@@ -116,6 +123,10 @@ public class Dictionary extends Table {
 
     public Map<String, String> getProperties() {
         return properties;
+    }
+
+    public long getVersion() {
+        return version;
     }
 
     public long getLastUpdateTime() {
@@ -153,7 +164,7 @@ public class Dictionary extends Table {
     public String toString() {
         return "Dictionary{" + "dbName='" + dbName + '\'' + ", sourceCtlName='" + sourceCtlName + '\''
                 + ", sourceDbName='" + sourceDbName + '\'' + ", sourceTableName='" + sourceTableName + '\''
-                + ", columns=" + columns + ", properties=" + properties + ", lastUpdateTime=" + lastUpdateTime
-                + ", status=" + status + ", layout=" + layout + '}';
+                + ", columns=" + columns + ", properties=" + properties + ", version=" + version + ", lastUpdateTime="
+                + lastUpdateTime + ", status=" + status + ", layout=" + layout + '}';
     }
 }

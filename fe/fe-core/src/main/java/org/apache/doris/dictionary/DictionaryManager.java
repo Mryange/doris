@@ -220,7 +220,7 @@ public class DictionaryManager extends MasterDaemon implements Writable {
         // TODO: Implement dictionary data check and update logic
         // This should:
         // 1. Check source tables for changes
-        // 2. scheduleDataLoad if necessary
+        // 2. scheduleDataLoad if necessary. and increase dictionary version
         // 3. Handle any errors or inconsistencies
     }
 

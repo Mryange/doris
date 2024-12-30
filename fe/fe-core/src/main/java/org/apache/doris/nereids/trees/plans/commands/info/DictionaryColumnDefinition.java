@@ -19,15 +19,21 @@ package org.apache.doris.nereids.trees.plans.commands.info;
 
 import org.apache.doris.catalog.Type;
 
+import com.aliyun.datalake20200710.external.google.gson.annotations.SerializedName;
+
 import java.util.Objects;
 
 /**
  * Definition of a dictionary column.
  */
 public class DictionaryColumnDefinition {
+    @SerializedName(value = "name")
     private final String name;
+
+    @SerializedName(value = "isKey")
     private final boolean isKey;
 
+    @SerializedName(value = "type")
     private Type type;
 
     public DictionaryColumnDefinition(String name, boolean isKey) {

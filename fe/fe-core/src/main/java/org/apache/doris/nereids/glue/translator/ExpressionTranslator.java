@@ -43,9 +43,12 @@ import org.apache.doris.catalog.ArrayType;
 import org.apache.doris.catalog.Column;
 import org.apache.doris.catalog.Function;
 import org.apache.doris.catalog.Function.NullableMode;
+import org.apache.doris.catalog.FunctionSignature;
 import org.apache.doris.catalog.Index;
 import org.apache.doris.catalog.OlapTable;
 import org.apache.doris.catalog.Type;
+import org.apache.doris.common.Pair;
+import org.apache.doris.dictionary.Dictionary;
 import org.apache.doris.nereids.exceptions.AnalysisException;
 import org.apache.doris.nereids.trees.expressions.AggregateExpression;
 import org.apache.doris.nereids.trees.expressions.Alias;
@@ -553,32 +556,35 @@ public class ExpressionTranslator extends DefaultExpressionVisitor<Expr, PlanTra
     }
 
     @Override
-    public Expr visitDictGet(DictGet function, PlanTranslatorContext context) {
-        List<Expr> arguments = function.getArguments().stream()
+    public Expr visitDictGet(DictGet dictGet, PlanTranslatorContext context) {
+        List<Expr> arguments = dictGet.getArguments().stream()
                 .map(arg -> arg.accept(this, context))
                 .collect(Collectors.toList());
 
-        List<Type> argTypes = function.getArguments().stream()
+        List<Type> argTypes = dictGet.getArguments().stream()
                 .map(Expression::getDataType)
                 .map(DataType::toCatalogDataType)
                 .collect(Collectors.toList());
 
-        NullableMode nullableMode = function.nullable()
-                ? NullableMode.ALWAYS_NULLABLE
-                : NullableMode.ALWAYS_NOT_NULLABLE;
+        Pair<FunctionSignature, Dictionary> sigAndDict = dictGet.customSignatureDict(context);
+        FunctionSignature signature = sigAndDict.first;
+        Dictionary dictionary = sigAndDict.second;
 
         org.apache.doris.catalog.ScalarFunction catalogFunction = new org.apache.doris.catalog.ScalarFunction(
-                new FunctionName(function.getName()), argTypes,
-                function.getDataType().toCatalogDataType(), function.hasVarArguments(),
-                "", TFunctionBinaryType.BUILTIN, true, true, nullableMode);
+                new FunctionName(dictGet.getName()), argTypes, signature.returnType.toCatalogDataType(),
+                dictGet.hasVarArguments(), "", TFunctionBinaryType.BUILTIN, true, true,
+                NullableMode.ALWAYS_NOT_NULLABLE);
+
+        // set special fields
         TDictFunction dictFunction = new TDictFunction();
-        dictFunction.setDictionaryId(42);
-        dictFunction.setVersionId(24);
+        dictFunction.setDictionaryId(dictionary.getId());
+        dictFunction.setVersionId(dictionary.getVersion());
         catalogFunction.setDictFunction(dictFunction);
+
         FunctionCallExpr functionCallExpr;
         // create catalog FunctionCallExpr without analyze again
         functionCallExpr = new FunctionCallExpr(catalogFunction, new FunctionParams(false, arguments));
-        functionCallExpr.setNullableFromNereids(function.nullable());
+        functionCallExpr.setNullableFromNereids(dictGet.nullable());
         return functionCallExpr;
     }
 
