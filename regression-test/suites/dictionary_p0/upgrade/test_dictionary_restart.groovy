@@ -33,4 +33,12 @@
     dict_res.each { row ->
         assertTrue(row[2] == "NORMAL")
     }
+
+    // 验证函数可用
+    expalin {
+        sql "select dict_get('test_dictionary_upgrade.area_dict', 'city', 'abc')"
+        verbose true
+        contains "varchar(64)"
+        notContains "varchar(32)"
+    }
 }

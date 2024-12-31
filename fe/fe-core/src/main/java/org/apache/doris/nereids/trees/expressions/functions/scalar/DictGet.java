@@ -86,8 +86,12 @@ public class DictGet extends ScalarFunction implements CustomSignature, AlwaysNo
         Dictionary dictionary;
         try {
             dictionary = dicMgr.getDictionary(dbName, dictName);
+            // check is not key column
+            if (dictionary.getDicColumns().stream().anyMatch(col -> col.getName().equals(colName) && col.isKey())) {
+                throw new AnalysisException("Can't ask for key " + colName + " by dict_get()");
+            }
         } catch (DdlException e) {
-            throw new AnalysisException("Dictionary " + dictName + " not found in database " + dbName);
+            throw new AnalysisException(e.getMessage());
         }
 
         return Pair.of(FunctionSignature.ret(dictionary.getColumnType(colName))

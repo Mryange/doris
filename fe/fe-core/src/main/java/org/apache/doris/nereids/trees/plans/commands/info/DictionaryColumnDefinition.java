@@ -18,15 +18,21 @@
 package org.apache.doris.nereids.trees.plans.commands.info;
 
 import org.apache.doris.catalog.Type;
+import org.apache.doris.common.io.Text;
+import org.apache.doris.common.io.Writable;
+import org.apache.doris.persist.gson.GsonUtils;
 
-import com.aliyun.datalake20200710.external.google.gson.annotations.SerializedName;
+import com.google.gson.annotations.SerializedName;
 
+import java.io.DataInput;
+import java.io.DataOutput;
+import java.io.IOException;
 import java.util.Objects;
 
 /**
  * Definition of a dictionary column.
  */
-public class DictionaryColumnDefinition {
+public class DictionaryColumnDefinition implements Writable {
     @SerializedName(value = "name")
     private final String name;
 
@@ -39,6 +45,12 @@ public class DictionaryColumnDefinition {
     public DictionaryColumnDefinition(String name, boolean isKey) {
         this.name = Objects.requireNonNull(name, "Column name cannot be null");
         this.isKey = isKey;
+    }
+
+    public DictionaryColumnDefinition(String name, boolean isKey, Type type) {
+        this.name = Objects.requireNonNull(name, "Column name cannot be null");
+        this.isKey = isKey;
+        this.type = type;
     }
 
     public String getName() {
@@ -55,5 +67,16 @@ public class DictionaryColumnDefinition {
 
     public void setType(Type type) {
         this.type = type;
+    }
+
+    @Override
+    public void write(DataOutput out) throws IOException {
+        String json = GsonUtils.GSON.toJson(this);
+        Text.writeString(out, json);
+    }
+
+    public static DictionaryColumnDefinition read(DataInput in) throws IOException {
+        String json = Text.readString(in);
+        return GsonUtils.GSON.fromJson(json, DictionaryColumnDefinition.class);
     }
 }

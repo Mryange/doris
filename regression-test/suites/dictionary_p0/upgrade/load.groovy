@@ -23,9 +23,9 @@ suite('load', 'p0,restart_fe') {
     // 创建用于IP_TRIE字典的基表
     sql """
         create table ip_base(
-            ip varchar(32) null,
-            region varchar(64) null,
-            isp varchar(32) null
+            ip varchar(32) not null,
+            region varchar(64) not null,
+            isp varchar(32) not null
         )
         DISTRIBUTED BY HASH(`ip`) BUCKETS auto
         properties("replication_num" = "1");
@@ -34,9 +34,9 @@ suite('load', 'p0,restart_fe') {
     // 创建用于HASH_MAP字典的基表
     sql """
         create table user_base(
-            user_id varchar(32) null,
-            user_name varchar(64) null,
-            age int null
+            user_id varchar(32) not null,
+            user_name varchar(64) not null,
+            age int not null
         )
         DISTRIBUTED BY HASH(`user_id`) BUCKETS auto
         properties("replication_num" = "1");
@@ -65,9 +65,9 @@ suite('load', 'p0,restart_fe') {
     // 增加第三个基表(IP_TRIE)
     sql """
         create table area_base(
-            area_ip varchar(32) null,
-            city varchar(64) null,
-            country varchar(32) null
+            area_ip varchar(32) not null,
+            city varchar(64) not null,
+            country varchar(32) not null
         )
         DISTRIBUTED BY HASH(`area_ip`) BUCKETS auto
         properties("replication_num" = "1");
@@ -76,9 +76,9 @@ suite('load', 'p0,restart_fe') {
     // 增加第四个基表(HASH_MAP)
     sql """
         create table product_base(
-            product_id varchar(32) null,
-            product_name varchar(64) null,
-            price decimal(10,2) null
+            product_id varchar(32) not null,
+            product_name varchar(64) not null,
+            price decimal(10,2) not null
         )
         DISTRIBUTED BY HASH(`product_id`) BUCKETS auto
         properties("replication_num" = "1");
