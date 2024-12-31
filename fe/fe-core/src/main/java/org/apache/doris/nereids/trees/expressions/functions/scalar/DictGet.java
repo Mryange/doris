@@ -24,7 +24,6 @@ import org.apache.doris.common.Pair;
 import org.apache.doris.dictionary.Dictionary;
 import org.apache.doris.dictionary.DictionaryManager;
 import org.apache.doris.nereids.exceptions.AnalysisException;
-import org.apache.doris.nereids.glue.translator.PlanTranslatorContext;
 import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.functions.AlwaysNotNullable;
 import org.apache.doris.nereids.trees.expressions.functions.CustomSignature;
@@ -55,6 +54,15 @@ public class DictGet extends ScalarFunction implements CustomSignature, AlwaysNo
         if (!getArgument(0).isLiteral() || !getArgument(1).isLiteral()) {
             throw new AnalysisException("dict_get() requires literal arguments");
         }
+        if (((Literal) getArgument(0)).getStringValue().split("\\.").length != 2) {
+            throw new AnalysisException("dict_get() requires dbName.dictName as first argument");
+        }
+        String[] firstNames = ((Literal) getArgument(0)).getStringValue().split("\\."); // db.dict
+        String dbName = firstNames[0];
+        String dictName = firstNames[1];
+        if (dbName.length() == 0 || dictName.length() == 0) {
+            throw new AnalysisException("dict_get() requires dbName.dictName as first argument");
+        }
     }
 
     @Override
@@ -64,17 +72,16 @@ public class DictGet extends ScalarFunction implements CustomSignature, AlwaysNo
 
     @Override
     public FunctionSignature customSignature() {
-        // FAKE return type here, will be replaced by real type in visitDictGet
-        return FunctionSignature.ret(getArgumentType(0)).args(getArgumentsTypes().toArray(new DataType[0]));
+        return customSignatureDict().key();
     }
 
     // use for visitDictGet to get real signature
-    public Pair<FunctionSignature, Dictionary> customSignatureDict(PlanTranslatorContext context) {
+    public Pair<FunctionSignature, Dictionary> customSignatureDict() {
         DictionaryManager dicMgr = Env.getCurrentEnv().getDictionaryManager();
-        String dictName = ((Literal) getArgument(0)).getStringValue();
+        String[] firstNames = ((Literal) getArgument(0)).getStringValue().split("\\."); // db.dict
+        String dbName = firstNames[0];
+        String dictName = firstNames[1];
         String colName = ((Literal) getArgument(1)).getStringValue();
-
-        String dbName = context.getConnectContext().getDatabase();
 
         Dictionary dictionary;
         try {

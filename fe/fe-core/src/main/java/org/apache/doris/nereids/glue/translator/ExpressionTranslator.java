@@ -566,7 +566,7 @@ public class ExpressionTranslator extends DefaultExpressionVisitor<Expr, PlanTra
                 .map(DataType::toCatalogDataType)
                 .collect(Collectors.toList());
 
-        Pair<FunctionSignature, Dictionary> sigAndDict = dictGet.customSignatureDict(context);
+        Pair<FunctionSignature, Dictionary> sigAndDict = dictGet.customSignatureDict();
         FunctionSignature signature = sigAndDict.first;
         Dictionary dictionary = sigAndDict.second;
 

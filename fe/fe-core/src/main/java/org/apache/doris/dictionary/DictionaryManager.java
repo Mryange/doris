@@ -152,6 +152,29 @@ public class DictionaryManager extends MasterDaemon implements Writable {
         scheduleDataUnload(dic);
     }
 
+    public void dropTableDictionaries(String dbName, String tableName) {
+        lockWrite();
+        List<Dictionary> droppedDictionaries = Lists.newArrayList();
+        try {
+            Map<String, Dictionary> dbDictionaries = dictionaries.get(dbName);
+            if (dbDictionaries != null) {
+                for (Map.Entry<String, Dictionary> entry : dbDictionaries.entrySet()) {
+                    Dictionary dictionary = entry.getValue();
+                    if (dictionary.getSourceTableName().equals(tableName)) {
+                        dbDictionaries.remove(entry.getKey());
+                        droppedDictionaries.add(dictionary);
+                        Env.getCurrentEnv().getEditLog().logDropDictionary(dbName, entry.getKey());
+                    }
+                }
+            }
+        } finally {
+            unlockWrite();
+        }
+        for (Dictionary dictionary : droppedDictionaries) {
+            scheduleDataUnload(dictionary);
+        }
+    }
+
     /**
      * Drop all dictionaries in a database. Used when dropping a database.
      */
