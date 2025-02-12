@@ -16,38 +16,17 @@
 // under the License.
 
 #pragma once
-#include <string>
 
-#include "common/status.h"
-#include "vec/exprs/vexpr.h"
-#include "vec/exprs/vslot_ref.h"
+#include "pipeline/exec/exchange_sink_buffer.h"
 
-namespace doris {
-class SlotDescriptor;
-class RowDescriptor;
-class RuntimeState;
-class TExprNode;
+namespace doris::pipeline {
 
-namespace vectorized {
-class Block;
-class VExprContext;
-
-// use to mock a slot ref expr
-class MockSlotRef final : public VSlotRef {
+class MockExchangeSinkBuffer : public ExchangeSinkBuffer {
 public:
-    MockSlotRef(int column_id) {
-        _node_type = TExprNodeType::SLOT_REF;
-        _column_id = column_id;
-    };
-    Status execute(VExprContext* context, Block* block, int* result_column_id) override {
-        *result_column_id = _column_id;
-        return Status::OK();
-    }
-    const std::string& expr_name() const override { return _name; }
-
-private:
-    const std::string _name = "MockSlotRef";
+    MockExchangeSinkBuffer(RuntimeState* state, int64_t sinknum)
+            : ExchangeSinkBuffer(state, sinknum) {};
+    void set_dependency(InstanceLoId sender_ins_id, std::shared_ptr<Dependency> queue_dependency,
+                        ExchangeSinkLocalState* local_state) override {}
 };
 
-} // namespace vectorized
-} // namespace doris
+} // namespace doris::pipeline

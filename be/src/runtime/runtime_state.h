@@ -582,7 +582,7 @@ public:
                _query_options.enable_local_merge_sort;
     }
 
-    bool enable_shared_exchange_sink_buffer() const {
+    MOCK_FUNCTION bool enable_shared_exchange_sink_buffer() const {
         return _query_options.__isset.enable_shared_exchange_sink_buffer &&
                _query_options.enable_shared_exchange_sink_buffer;
     }

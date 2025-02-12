@@ -22,6 +22,7 @@
 #include <string>
 #include <vector>
 
+#include "common/be_mock_util.h"
 #include "common/status.h"
 #include "runtime/types.h"
 #include "util/runtime_profile.h"
@@ -48,22 +49,24 @@ class BufferWritable;
 class IColumn;
 
 class AggFnEvaluator {
+public:
     ENABLE_FACTORY_CREATOR(AggFnEvaluator);
+    MOCK_DEFINE(virtual) ~AggFnEvaluator() = default;
 
 public:
     static Status create(ObjectPool* pool, const TExpr& desc, const TSortInfo& sort_info,
                          const bool without_key, AggFnEvaluator** result);
 
-    Status prepare(RuntimeState* state, const RowDescriptor& desc,
-                   const SlotDescriptor* intermediate_slot_desc,
-                   const SlotDescriptor* output_slot_desc);
+    MOCK_FUNCTION Status prepare(RuntimeState* state, const RowDescriptor& desc,
+                                 const SlotDescriptor* intermediate_slot_desc,
+                                 const SlotDescriptor* output_slot_desc);
 
     void set_timer(RuntimeProfile::Counter* merge_timer, RuntimeProfile::Counter* expr_timer) {
         _merge_timer = merge_timer;
         _expr_timer = expr_timer;
     }
 
-    Status open(RuntimeState* state);
+    MOCK_FUNCTION Status open(RuntimeState* state);
 
     // create/destroy AGG Data
     void create(AggregateDataPtr place);
@@ -105,7 +108,7 @@ public:
 
     void set_version(const int version) { _function->set_version(version); }
 
-    AggFnEvaluator* clone(RuntimeState* state, ObjectPool* pool);
+    MOCK_FUNCTION AggFnEvaluator* clone(RuntimeState* state, ObjectPool* pool);
 
 private:
     const TFunction _fn;
@@ -119,6 +122,10 @@ private:
     AggFnEvaluator(const TExprNode& desc, const bool without_key);
     AggFnEvaluator(AggFnEvaluator& evaluator, RuntimeState* state);
 
+#ifdef BE_TEST
+    AggFnEvaluator(bool is_merge, bool without_key)
+            : _is_merge(is_merge), _without_key(without_key) {};
+#endif
     Status _calc_argument_columns(Block* block);
 
     DataTypes _argument_types_with_sort;

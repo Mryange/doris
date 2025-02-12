@@ -278,7 +278,9 @@ ExchangeSinkOperatorX::ExchangeSinkOperatorX(
           _enable_local_merge_sort(state->enable_local_merge_sort()),
           _dest_is_merge(sink.__isset.is_merge && sink.is_merge),
           _fragment_instance_ids(fragment_instance_ids) {
+#ifndef BE_TEST
     DCHECK_GT(destinations.size(), 0);
+#endif
     DCHECK(sink.output_partition.type == TPartitionType::UNPARTITIONED ||
            sink.output_partition.type == TPartitionType::HASH_PARTITIONED ||
            sink.output_partition.type == TPartitionType::RANDOM ||

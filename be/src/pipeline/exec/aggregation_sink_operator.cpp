@@ -713,8 +713,7 @@ AggSinkOperatorX::AggSinkOperatorX(ObjectPool* pool, int operator_id, int dest_i
                                    : tnode.agg_node.grouping_exprs),
           _is_colocate(tnode.agg_node.__isset.is_colocate && tnode.agg_node.is_colocate),
           _require_bucket_distribution(require_bucket_distribution),
-          _agg_fn_output_row_descriptor(descs, tnode.row_tuples, tnode.nullable_tuples),
-          _without_key(tnode.agg_node.grouping_exprs.empty()) {
+          _agg_fn_output_row_descriptor(descs, tnode.row_tuples, tnode.nullable_tuples) {
     _is_serial_operator = tnode.__isset.is_serial_operator && tnode.is_serial_operator;
 }
 
@@ -786,6 +785,24 @@ Status AggSinkOperatorX::open(RuntimeState* state) {
         _aggregate_evaluators[i]->set_version(state->be_exec_version());
     }
 
+    RETURN_IF_ERROR(_calc_aggregate_evaluators());
+
+    // check output type
+    if (_needs_finalize) {
+        RETURN_IF_ERROR(vectorized::AggFnEvaluator::check_agg_fn_output(
+                cast_set<uint32_t>(_probe_expr_ctxs.size()), _aggregate_evaluators,
+                _agg_fn_output_row_descriptor));
+    }
+    RETURN_IF_ERROR(vectorized::VExpr::open(_probe_expr_ctxs, state));
+
+    for (auto& _aggregate_evaluator : _aggregate_evaluators) {
+        RETURN_IF_ERROR(_aggregate_evaluator->open(state));
+    }
+
+    return Status::OK();
+}
+
+Status AggSinkOperatorX::_calc_aggregate_evaluators() {
     _offsets_of_aggregate_states.resize(_aggregate_evaluators.size());
 
     for (size_t i = 0; i < _aggregate_evaluators.size(); ++i) {
@@ -811,18 +828,6 @@ Status AggSinkOperatorX::open(RuntimeState* state) {
                     alignment_of_next_state * alignment_of_next_state;
         }
     }
-    // check output type
-    if (_needs_finalize) {
-        RETURN_IF_ERROR(vectorized::AggFnEvaluator::check_agg_fn_output(
-                cast_set<uint32_t>(_probe_expr_ctxs.size()), _aggregate_evaluators,
-                _agg_fn_output_row_descriptor));
-    }
-    RETURN_IF_ERROR(vectorized::VExpr::open(_probe_expr_ctxs, state));
-
-    for (auto& _aggregate_evaluator : _aggregate_evaluators) {
-        RETURN_IF_ERROR(_aggregate_evaluator->open(state));
-    }
-
     return Status::OK();
 }
 

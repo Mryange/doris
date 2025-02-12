@@ -126,6 +126,15 @@ class AggSinkOperatorX final : public DataSinkOperatorX<AggSinkLocalState> {
 public:
     AggSinkOperatorX(ObjectPool* pool, int operator_id, int dest_id, const TPlanNode& tnode,
                      const DescriptorTbl& descs, bool require_bucket_distribution);
+
+#ifdef BE_TEST
+    AggSinkOperatorX()
+            : DataSinkOperatorX<AggSinkLocalState>(1, 0, 2),
+              _is_first_phase(),
+              _is_colocate(),
+              _require_bucket_distribution() {}
+#endif
+
     ~AggSinkOperatorX() override = default;
     Status init(const TDataSink& tsink) override {
         return Status::InternalError("{} should not init with TPlanNode",
@@ -163,10 +172,11 @@ public:
     using DataSinkOperatorX<AggSinkLocalState>::get_local_state;
 
 protected:
+    Status _calc_aggregate_evaluators();
+
     using LocalState = AggSinkLocalState;
     friend class AggSinkLocalState;
     std::vector<vectorized::AggFnEvaluator*> _aggregate_evaluators;
-    bool _can_short_circuit = false;
 
     // may be we don't have to know the tuple id
     TupleId _intermediate_tuple_id;
@@ -200,7 +210,6 @@ protected:
     const bool _is_colocate;
     const bool _require_bucket_distribution;
     RowDescriptor _agg_fn_output_row_descriptor;
-    const bool _without_key;
 };
 
 } // namespace doris::pipeline

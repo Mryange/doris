@@ -99,6 +99,12 @@ public:
                        const DescriptorTbl& descs);
     ~AggSourceOperatorX() = default;
 
+#ifdef BE_TEST
+    AggSourceOperatorX() = default;
+    RowDescriptor& row_descriptor() override { return *mock_row_descriptor; }
+    std::unique_ptr<RowDescriptor> mock_row_descriptor;
+#endif
+
     Status get_block(RuntimeState* state, vectorized::Block* block, bool* eos) override;
 
     bool is_source() const override { return true; }

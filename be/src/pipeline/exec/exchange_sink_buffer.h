@@ -232,8 +232,9 @@ public:
     void update_rpc_time(InstanceLoId id, int64_t start_rpc_time, int64_t receive_rpc_time);
     void update_profile(RuntimeProfile* profile);
 
-    void set_dependency(InstanceLoId sender_ins_id, std::shared_ptr<Dependency> queue_dependency,
-                        ExchangeSinkLocalState* local_state) {
+    MOCK_FUNCTION void set_dependency(InstanceLoId sender_ins_id,
+                                      std::shared_ptr<Dependency> queue_dependency,
+                                      ExchangeSinkLocalState* local_state) {
         DCHECK(_queue_deps.contains(sender_ins_id));
         DCHECK(_parents.contains(sender_ins_id));
         _queue_deps[sender_ins_id] = queue_dependency;

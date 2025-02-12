@@ -117,14 +117,22 @@ public:
                         (_brpc_dest_addr.port == config::brpc_port)),
               _serializer(_parent, _is_local) {}
 
+#ifdef BE_TEST
+    Channel(pipeline::ExchangeSinkLocalState* parent, TUniqueId fragment_instance_id, bool is_local)
+            : _parent(parent),
+              _fragment_instance_id(std::move(fragment_instance_id)),
+              _is_local(is_local),
+              _serializer(_parent, _is_local) {}
+#endif
+
     virtual ~Channel() = default;
 
     // Initialize channel.
     // Returns OK if successful, error indication otherwise.
-    Status init(RuntimeState* state);
-    Status open(RuntimeState* state);
+    MOCK_FUNCTION Status init(RuntimeState* state);
+    MOCK_FUNCTION Status open(RuntimeState* state);
 
-    Status send_local_block(Block* block, bool eos, bool can_be_moved);
+    MOCK_FUNCTION Status send_local_block(Block* block, bool eos, bool can_be_moved);
     // Flush buffered rows and close channel. This function don't wait the response
     // of close operation, client should call close_wait() to finish channel's close.
     // We split one close operation into two phases in order to make multiple channels
@@ -148,8 +156,9 @@ public:
     // Returns the status of the most recently finished transmit_data
     // rpc (or OK if there wasn't one that hasn't been reported yet).
     // if batch is nullptr, send the eof packet
-    Status send_remote_block(std::unique_ptr<PBlock>&& block, bool eos = false);
-    Status send_broadcast_block(std::shared_ptr<BroadcastPBlockHolder>& block, bool eos = false);
+    MOCK_FUNCTION Status send_remote_block(std::unique_ptr<PBlock>&& block, bool eos = false);
+    MOCK_FUNCTION Status send_broadcast_block(std::shared_ptr<BroadcastPBlockHolder>& block,
+                                              bool eos = false);
 
     Status add_rows(Block* block, const uint32_t* data, const uint32_t offset, const uint32_t size,
                     bool eos) {
