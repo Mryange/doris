@@ -69,15 +69,6 @@ VDataStreamRecvr::SenderQueue::~SenderQueue() {
 }
 
 Status VDataStreamRecvr::SenderQueue::get_batch(Block* block, bool* eos) {
-#ifndef NDEBUG
-    if (!_is_cancelled && _block_queue.empty() && _num_remaining_senders > 0) {
-        throw doris::Exception(ErrorCode::INTERNAL_ERROR,
-                               "_is_cancelled: {}, _block_queue_empty: {}, "
-                               "_num_remaining_senders: {}, _debug_string_info: {}",
-                               _is_cancelled, _block_queue.empty(), _num_remaining_senders,
-                               _debug_string_info());
-    }
-#endif
     BlockItem block_item;
     {
         UniqueLock l(_lock);
@@ -106,7 +97,6 @@ Status VDataStreamRecvr::SenderQueue::get_batch(Block* block, bool* eos) {
     _recvr->_memory_used_counter->update(-(int64_t)block_byte_size);
     UniqueLock l(_lock);
     sub_blocks_memory_usage(block_byte_size);
-    _record_debug_info();
     if (_block_queue.empty() && _source_dependency) {
         if (!_is_cancelled && _num_remaining_senders > 0) {
             _source_dependency->block();
@@ -188,7 +178,6 @@ Status VDataStreamRecvr::SenderQueue::add_block(std::unique_ptr<PBlock> pblock, 
 
     _block_queue.emplace_back(std::move(pblock), block_byte_size);
     COUNTER_UPDATE(_recvr->_remote_bytes_received_counter, block_byte_size);
-    _record_debug_info();
     try_set_dep_ready_without_lock();
 
     // if done is nullptr, this function can't delay this response
@@ -235,7 +224,6 @@ void VDataStreamRecvr::SenderQueue::add_block(Block* block, bool use_move) {
             return;
         }
         _block_queue.emplace_back(std::move(nblock), block_mem_size);
-        _record_debug_info();
         try_set_dep_ready_without_lock();
         COUNTER_UPDATE(_recvr->_local_bytes_received_counter, block_mem_size);
         _recvr->_memory_used_counter->update(block_mem_size);
@@ -251,7 +239,6 @@ void VDataStreamRecvr::SenderQueue::decrement_senders(int be_number) {
     _sender_eos_set.insert(be_number);
     DCHECK_GT(_num_remaining_senders, 0);
     _num_remaining_senders--;
-    _record_debug_info();
     VLOG_FILE << "decremented senders: fragment_instance_id="
               << print_id(_recvr->fragment_instance_id()) << " node_id=" << _recvr->dest_node_id()
               << " #senders=" << _num_remaining_senders;

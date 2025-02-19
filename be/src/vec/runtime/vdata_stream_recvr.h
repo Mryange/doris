@@ -205,54 +205,13 @@ public:
 
     bool exceeds_limit() REQUIRES(_lock);
 
+    int num_remaining_senders() const NO_THREAD_SAFETY_ANALYSIS { return _num_remaining_senders; }
+
+    size_t block_queue_size() const NO_THREAD_SAFETY_ANALYSIS { return _block_queue.size(); }
+
 protected:
     friend class pipeline::ExchangeLocalState;
     void try_set_dep_ready_without_lock() REQUIRES(_lock);
-
-    // To record information about several variables in the event of a DCHECK failure.
-    //  DCHECK(_is_cancelled || !_block_queue.empty() || _num_remaining_senders == 0)
-#ifndef NDEBUG
-    constexpr static auto max_record_number = 128;
-    std::list<size_t> _record_block_queue;
-    std::list<int> _record_num_remaining_senders;
-#else
-#endif
-
-    // only in debug
-    ALWAYS_INLINE inline void _record_debug_info() {
-#ifndef NDEBUG
-        if (_record_block_queue.size() > max_record_number) {
-            _record_block_queue.pop_front();
-        }
-        if (_record_num_remaining_senders.size() > max_record_number) {
-            _record_num_remaining_senders.pop_front();
-        }
-        _record_block_queue.push_back(_block_queue.size());
-        _record_num_remaining_senders.push_back(_num_remaining_senders);
-#else
-#endif
-    }
-
-    ALWAYS_INLINE inline std::string _debug_string_info() {
-#ifndef NDEBUG
-        std::stringstream out;
-        DCHECK_EQ(_record_block_queue.size(), _record_num_remaining_senders.size());
-        out << "record_debug_info [  \n";
-
-        auto it1 = _record_block_queue.begin();
-        auto it2 = _record_num_remaining_senders.begin();
-        for (; it1 != _record_block_queue.end(); it1++, it2++) {
-            out << "( "
-                << "_block_queue size : " << *it1 << " , _num_remaining_senders : " << *it2
-                << " ) \n";
-        }
-        out << "  ]\n";
-        return out.str();
-#else
-#endif
-        return "";
-    }
-
     // Not managed by this class
     VDataStreamRecvr* _recvr = nullptr;
     Mutex _lock;

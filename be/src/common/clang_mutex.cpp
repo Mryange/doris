@@ -1,7 +1,5 @@
 #include "clang_mutex.h"
 
-
-
 #ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic warning "-Wthread-safety"
@@ -16,14 +14,10 @@ private:
         balance += 1; // Writing variable 'balance' requires holding mutex 'mu' exclusively
     }
 
-    void foo2()REQUIRES_SHARED(mu){
-        
-    }
+    void foo2() REQUIRES_SHARED(mu) {}
 
-    void foo3() REQUIRES(mu){
-    
-    }
-    void test(){
+    void foo3() REQUIRES(mu) {}
+    void test() {
         {
             SharedLock lock(mu);
             foo2();
@@ -35,16 +29,15 @@ private:
         }
         {
             UniqueLock lock(mu);
-            foo3(); 
+            foo3();
             foo2();
             foo2();
         }
         {
             UniqueLock lock(mu);
-            foo2(); 
+            foo2();
         }
         foo3(); //Calling function 'foo3' requires holding mutex 'mu' exclusively
-        foo2();// Calling function 'foo2' requires holding mutex 'mu'
-       
+        foo2(); // Calling function 'foo2' requires holding mutex 'mu'
     }
 };
