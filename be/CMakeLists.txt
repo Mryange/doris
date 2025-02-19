@@ -317,6 +317,7 @@ if (COMPILER_CLANG)
     endif()
 
     add_compile_options(-fcolor-diagnostics
+                        -Wthread-safety
                         -Wpedantic
                         -Wshadow-field
                         -Wunused

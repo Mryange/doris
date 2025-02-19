@@ -38,6 +38,7 @@
 #include <utility>
 #include <vector>
 
+#include "common/clang_mutex.h"
 #include "common/config.h"
 #include "common/global_types.h"
 #include "common/object_pool.h"
@@ -175,7 +176,7 @@ public:
 
     ~SenderQueue();
 
-    std::shared_ptr<pipeline::Dependency> local_channel_dependency() {
+    std::shared_ptr<pipeline::Dependency> local_channel_dependency() NO_THREAD_SAFETY_ANALYSIS {
         return _local_channel_dependency;
     }
 
@@ -193,19 +194,20 @@ public:
 
     void close();
 
-    void set_dependency(std::shared_ptr<pipeline::Dependency> dependency) {
+    void set_dependency(std::shared_ptr<pipeline::Dependency> dependency)
+            NO_THREAD_SAFETY_ANALYSIS {
         _source_dependency = dependency;
     }
 
-    void add_blocks_memory_usage(int64_t size);
+    void add_blocks_memory_usage(int64_t size) REQUIRES(_lock);
 
-    void sub_blocks_memory_usage(int64_t size);
+    void sub_blocks_memory_usage(int64_t size) REQUIRES(_lock);
 
-    bool exceeds_limit();
+    bool exceeds_limit() REQUIRES(_lock);
 
 protected:
     friend class pipeline::ExchangeLocalState;
-    void try_set_dep_ready_without_lock();
+    void try_set_dep_ready_without_lock() REQUIRES(_lock);
 
     // To record information about several variables in the event of a DCHECK failure.
     //  DCHECK(_is_cancelled || !_block_queue.empty() || _num_remaining_senders == 0)
@@ -253,11 +255,11 @@ protected:
 
     // Not managed by this class
     VDataStreamRecvr* _recvr = nullptr;
-    std::mutex _lock;
-    bool _is_cancelled;
-    Status _cancel_status;
-    int _num_remaining_senders;
-    std::unique_ptr<MemTracker> _queue_mem_tracker;
+    Mutex _lock;
+    bool _is_cancelled GUARDED_BY(_lock);
+    Status _cancel_status GUARDED_BY(_lock);
+    int _num_remaining_senders GUARDED_BY(_lock);
+    std::unique_ptr<MemTracker> _queue_mem_tracker GUARDED_BY(_lock);
 
     // `BlockItem` is used in `_block_queue` to handle both local and remote exchange blocks.
     // For local exchange blocks, `BlockUPtr` is used directly without any modification.
@@ -292,16 +294,17 @@ protected:
         int64_t _deserialize_time = 0;
     };
 
-    std::list<BlockItem> _block_queue;
+    std::list<BlockItem> _block_queue GUARDED_BY(_lock);
 
     // sender_id
-    std::unordered_set<int> _sender_eos_set;
+    std::unordered_set<int> _sender_eos_set GUARDED_BY(_lock);
     // be_number => packet_seq
-    std::unordered_map<int, int64_t> _packet_seq_map;
-    std::deque<std::pair<google::protobuf::Closure*, MonotonicStopWatch>> _pending_closures;
+    std::unordered_map<int, int64_t> _packet_seq_map GUARDED_BY(_lock);
+    std::deque<std::pair<google::protobuf::Closure*, MonotonicStopWatch>> _pending_closures
+            GUARDED_BY(_lock);
 
-    std::shared_ptr<pipeline::Dependency> _source_dependency;
-    std::shared_ptr<pipeline::Dependency> _local_channel_dependency;
+    std::shared_ptr<pipeline::Dependency> _source_dependency GUARDED_BY(_lock);
+    std::shared_ptr<pipeline::Dependency> _local_channel_dependency GUARDED_BY(_lock);
 };
 
 } // namespace vectorized
