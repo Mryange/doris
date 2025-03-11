@@ -79,8 +79,6 @@ public:
     Status close(RuntimeState* state) override;
     [[nodiscard]] bool is_source() const override { return true; }
 
-    [[nodiscard]] RowDescriptor input_row_desc() const { return _input_row_desc; }
-
     [[nodiscard]] int num_senders() const { return _num_senders; }
     [[nodiscard]] bool is_merging() const { return _is_merging; }
 
@@ -100,11 +98,9 @@ private:
     const int _num_senders;
     const bool _is_merging;
     const TPartitionType::type _partition_type;
-    RowDescriptor _input_row_desc;
 
     // use in merge sort
     size_t _offset;
-
     doris::vectorized::VSortExecExprs _vsort_exec_exprs;
     std::vector<bool> _is_asc_order;
     std::vector<bool> _nulls_first;

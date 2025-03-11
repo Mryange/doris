@@ -110,10 +110,6 @@ ExchangeSourceOperatorX::ExchangeSourceOperatorX(ObjectPool* pool, const TPlanNo
           _partition_type(tnode.exchange_node.__isset.partition_type
                                   ? tnode.exchange_node.partition_type
                                   : TPartitionType::UNPARTITIONED),
-          _input_row_desc(descs, tnode.exchange_node.input_row_tuples,
-                          std::vector<bool>(tnode.nullable_tuples.begin(),
-                                            tnode.nullable_tuples.begin() +
-                                                    tnode.exchange_node.input_row_tuples.size())),
           _offset(tnode.exchange_node.__isset.offset ? tnode.exchange_node.offset : 0) {}
 
 Status ExchangeSourceOperatorX::init(const TPlanNode& tnode, RuntimeState* state) {
@@ -166,10 +162,11 @@ Status ExchangeSourceOperatorX::get_block(RuntimeState* state, vectorized::Block
                                                                       block, block->columns()));
     }
 
-    // In vsortrunmerger, it will set eos=true, and block not empty
-    // so that eos==true, could not make sure that block not have valid data
-    if (!*eos || block->rows() > 0) {
+    // 在非merge的情况下，如果eos = true，则block一定为空
+    // 在merge的情况下，不能保证这点
+    if (block->rows() > 0) {
         if (!_is_merging) {
+            // 如果是merge ，我们会在merger内部处理offset，exchange source不需要处理
             if (local_state.num_rows_skipped + block->rows() < _offset) {
                 local_state.num_rows_skipped += block->rows();
                 block->set_num_rows(0);
@@ -180,6 +177,7 @@ Status ExchangeSourceOperatorX::get_block(RuntimeState* state, vectorized::Block
                 block->skip_num_rows(offset);
             }
         }
+        // merger 其实也处理了limit，但是多处理一次limit不会有正确性问题
         if (local_state.num_rows_returned() + block->rows() < _limit) {
             local_state.add_num_rows_returned(block->rows());
         } else {
