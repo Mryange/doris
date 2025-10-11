@@ -190,13 +190,17 @@ Status VMysqlResultWriter::_write_one_block(RuntimeState* state, Block& block) {
         if (!_is_binary_format) {
             const auto& serde_dialect = state->query_options().serde_dialect;
             auto write_to_text = [serde_dialect](DataTypeSerDeSPtr& serde, const IColumn* column,
-                                                 BufferWriter& write_buffer, size_t col_index) {
+                                                 BufferWriter& write_buffer, size_t col_index,
+                                                 const DataTypeSerDe::FormatOptions& options) {
                 if (serde_dialect == TSerdeDialect::DORIS) {
-                    return serde->write_column_to_mysql_text(*column, write_buffer, col_index);
+                    return serde->write_column_to_mysql_text(*column, write_buffer, col_index,
+                                                             options);
                 } else if (serde_dialect == TSerdeDialect::PRESTO) {
-                    return serde->write_column_to_presto_text(*column, write_buffer, col_index);
+                    return serde->write_column_to_presto_text(*column, write_buffer, col_index,
+                                                              options);
                 } else if (serde_dialect == TSerdeDialect::HIVE) {
-                    return serde->write_column_to_hive_text(*column, write_buffer, col_index);
+                    return serde->write_column_to_hive_text(*column, write_buffer, col_index,
+                                                            options);
                 } else {
                     return false;
                 }
@@ -207,7 +211,8 @@ Status VMysqlResultWriter::_write_one_block(RuntimeState* state, Block& block) {
                 for (size_t col_idx = 0; col_idx < num_cols; ++col_idx) {
                     const auto col_index = index_check_const(row_idx, arguments[col_idx].is_const);
                     const auto* column = arguments[col_idx].column;
-                    if (write_to_text(arguments[col_idx].serde, column, write_buffer, col_index)) {
+                    if (write_to_text(arguments[col_idx].serde, column, write_buffer, col_index,
+                                      _options)) {
                         write_buffer.commit();
                         auto str = mysql_output_tmp_col->get_data_at(write_buffer_index);
                         direct_write_to_mysql_result_string(mysql_rows, str.data, str.size);

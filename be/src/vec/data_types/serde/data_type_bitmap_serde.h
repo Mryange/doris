@@ -74,14 +74,15 @@ public:
     Status write_column_to_mysql_binary(const IColumn& column, MysqlRowBinaryBuffer& row_buffer,
                                         int64_t row_idx, bool col_const) const override;
 
-    bool write_column_to_mysql_text(const IColumn& column, BufferWritable& bw,
-                                    int64_t row_idx) const override;
+    bool write_column_to_mysql_text(const IColumn& column, BufferWritable& bw, int64_t row_idx,
+                                    const FormatOptions& options) const override;
 
     Status write_column_to_orc(const std::string& timezone, const IColumn& column,
                                const NullMap* null_map, orc::ColumnVectorBatch* orc_col_batch,
                                int64_t start, int64_t end, vectorized::Arena& arena) const override;
 
-    void to_string(const IColumn& column, size_t row_num, BufferWritable& bw) const override;
+    void to_string(const IColumn& column, size_t row_num, BufferWritable& bw,
+                   const FormatOptions& options) const override;
 };
 } // namespace vectorized
 } // namespace doris
