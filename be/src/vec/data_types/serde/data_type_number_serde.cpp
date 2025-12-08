@@ -482,7 +482,7 @@ Status DataTypeNumberSerDe<T>::write_column_to_mysql_binary(const IColumn& colum
     } else if constexpr (T == TYPE_INT || T == TYPE_DATEV2 || T == TYPE_IPV4) {
         buf_ret = result.push_int(data[col_index]);
     } else if constexpr (T == TYPE_BIGINT || T == TYPE_DATE || T == TYPE_DATETIME ||
-                         T == TYPE_DATETIMEV2) {
+                         T == TYPE_DATETIMEV2 || T == TYPE_TIMESTAMPTZ) {
         buf_ret = result.push_bigint(data[col_index]);
     } else if constexpr (T == TYPE_LARGEINT) {
         buf_ret = result.push_largeint(data[col_index]);
@@ -497,10 +497,6 @@ Status DataTypeNumberSerDe<T>::write_column_to_mysql_binary(const IColumn& colum
         } else {
             buf_ret = result.push_double(data[col_index]);
         }
-    } else if constexpr (T == TYPE_TIMESTAMPTZ) {
-        TimestampTzValue tz_value(data[col_index]);
-        DCHECK(options.timezone != nullptr);
-        buf_ret = result.push_timestamptz(tz_value, *options.timezone, get_scale());
     }
     if (UNLIKELY(buf_ret != 0)) {
         return Status::InternalError("pack mysql buffer failed.");

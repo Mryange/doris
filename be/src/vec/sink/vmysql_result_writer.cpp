@@ -50,6 +50,7 @@
 #include "vec/data_types/data_type_map.h"
 #include "vec/data_types/data_type_nullable.h"
 #include "vec/data_types/data_type_struct.h"
+#include "vec/data_types/serde/data_type_serde.h"
 #include "vec/exprs/vexpr.h"
 #include "vec/exprs/vexpr_context.h"
 
@@ -143,6 +144,8 @@ Status VMysqlResultWriter::_write_one_block(RuntimeState* state, Block& block) {
             DataTypeSerDeSPtr serde;
             PrimitiveType type;
         };
+        auto options = DataTypeSerDe::get_default_format_options();
+        options.timezone = &state->timezone_obj();
 
         const size_t num_cols = _output_vexpr_ctxs.size();
         std::vector<Arguments> arguments;
@@ -212,7 +215,7 @@ Status VMysqlResultWriter::_write_one_block(RuntimeState* state, Block& block) {
                     const auto col_index = index_check_const(row_idx, arguments[col_idx].is_const);
                     const auto* column = arguments[col_idx].column;
                     if (write_to_text(arguments[col_idx].serde, column, write_buffer, col_index,
-                                      _options)) {
+                                      options)) {
                         write_buffer.commit();
                         auto str = mysql_output_tmp_col->get_data_at(write_buffer_index);
                         direct_write_to_mysql_result_string(mysql_rows, str.data, str.size);
@@ -241,7 +244,7 @@ Status VMysqlResultWriter::_write_one_block(RuntimeState* state, Block& block) {
                                 index_check_const(row_idx, arguments[col_idx].is_const);
                         const auto* column = arguments[col_idx].column;
                         if (arguments[col_idx].serde->write_column_to_mysql_text(
-                                    *column, write_buffer, col_index)) {
+                                    *column, write_buffer, col_index, options)) {
                             write_buffer.commit();
                             auto str = mysql_output_tmp_col->get_data_at(write_buffer_index);
                             row_buffer.push_string(str.data, str.size);
