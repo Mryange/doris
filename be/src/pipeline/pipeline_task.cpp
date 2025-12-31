@@ -239,14 +239,12 @@ bool PipelineTask::_wait_to_start() {
     // 2. Runtime filter dependencies are ready
     _blocked_dep = _execution_dep->is_blocked_by(shared_from_this());
     if (_blocked_dep != nullptr) {
-        static_cast<Dependency*>(_blocked_dep)->start_watcher();
         return true;
     }
 
     for (auto* op_dep : _filter_dependencies) {
         _blocked_dep = op_dep->is_blocked_by(shared_from_this());
         if (_blocked_dep != nullptr) {
-            _blocked_dep->start_watcher();
             return true;
         }
     }
@@ -267,7 +265,6 @@ bool PipelineTask::_is_blocked() {
             for (auto* dep : _read_dependencies[i]) {
                 _blocked_dep = dep->is_blocked_by(shared_from_this());
                 if (_blocked_dep != nullptr) {
-                    _blocked_dep->start_watcher();
                     return true;
                 }
             }
@@ -286,7 +283,6 @@ bool PipelineTask::_is_blocked() {
     for (auto* op_dep : _write_dependencies) {
         _blocked_dep = op_dep->is_blocked_by(shared_from_this());
         if (_blocked_dep != nullptr) {
-            _blocked_dep->start_watcher();
             return true;
         }
     }

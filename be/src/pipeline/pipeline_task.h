@@ -88,7 +88,6 @@ public:
         for (auto* fin_dep : _finish_dependencies) {
             _blocked_dep = fin_dep->is_blocked_by(shared_from_this());
             if (_blocked_dep != nullptr) {
-                _blocked_dep->start_watcher();
                 return true;
             }
         }

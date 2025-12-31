@@ -57,10 +57,10 @@ void Dependency::set_ready() {
     if (_ready) {
         return;
     }
-    _watcher.stop();
     std::vector<std::weak_ptr<PipelineTask>> local_block_task {};
     {
         std::unique_lock<std::mutex> lc(_task_lock);
+        stop_watcher(lc);
         if (_ready) {
             return;
         }
@@ -79,6 +79,7 @@ Dependency* Dependency::is_blocked_by(std::shared_ptr<PipelineTask> task) {
     std::unique_lock<std::mutex> lc(_task_lock);
     auto ready = _ready.load();
     if (!ready && task) {
+        start_watcher(lc);
         _add_block_task(task);
     }
     return ready ? nullptr : this;
@@ -113,6 +114,7 @@ Dependency* RuntimeFilterDependency::is_blocked_by(std::shared_ptr<PipelineTask>
     std::unique_lock<std::mutex> lc(_task_lock);
     auto ready = _ready.load();
     if (!ready && task) {
+        start_watcher(lc);
         _add_block_task(task);
         task->_blocked_dep = this;
     }
