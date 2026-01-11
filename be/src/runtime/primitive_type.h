@@ -273,9 +273,9 @@ struct PrimitiveTypeTraits;
  */
 template <>
 struct PrimitiveTypeTraits<TYPE_BOOLEAN> {
-    using CppType = bool;
+    using CppType = vectorized::UInt8;
     using StorageFieldType = CppType;
-    using CppNativeType = bool;
+    using CppNativeType = vectorized::UInt8;
     using ColumnItemType = vectorized::UInt8;
     using DataType = vectorized::DataTypeBool;
     using ColumnType = vectorized::ColumnUInt8;
