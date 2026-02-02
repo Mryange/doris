@@ -738,6 +738,8 @@ public class SessionVariable implements Serializable, Writable {
 
     public static final String ENABLE_EXTENDED_REGEX = "enable_extended_regex";
 
+    public static final String SHORT_CIRCUIT_EVALUATION = "short_circuit_evaluation";
+
     // NOTE: if you want to add some debug variables, please disable sql cache in `CacheAnalyzer.commonCacheCondition`,
     //       and set affectQueryResult=true
     public static final List<String> DEBUG_VARIABLES = ImmutableList.of(
@@ -1752,6 +1754,10 @@ public class SessionVariable implements Serializable, Writable {
 
     @VariableMgr.VarAttr(name = ENABLE_DPHYP_OPTIMIZER)
     public boolean enableDPHypOptimizer = false;
+
+    @VariableMgr.VarAttr(name = SHORT_CIRCUIT_EVALUATION, fuzzy = true, description = { "是否启用短路求值",
+            "Whether to enable short-circuit evaluation" })
+    public boolean shortCircuitEvaluation = false;
 
     /**
      * This variable is used to select n-th optimized plan in memo.
@@ -3199,6 +3205,7 @@ public class SessionVariable implements Serializable, Writable {
         this.enableCommonExpPushDownForInvertedIndex = random.nextBoolean();
         this.disableStreamPreaggregations = random.nextBoolean();
         this.enableShareHashTableForBroadcastJoin = random.nextBoolean();
+        this.shortCircuitEvaluation = random.nextBoolean();
 
         // 4KB = 4 * 1024 bytes
         int minBytes = 4 * 1024;
@@ -5523,6 +5530,9 @@ public class SessionVariable implements Serializable, Writable {
         return enableDmlMaterializedViewRewriteWhenBaseTableUnawareness;
     }
 
+    public boolean isShortCircuitEvaluation() {
+        return shortCircuitEvaluation;
+    }
 
     public boolean isAllowModifyMaterializedViewData() {
         return allowModifyMaterializedViewData;
