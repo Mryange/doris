@@ -1050,7 +1050,7 @@ Status VExpr::execute_filter(VExprContext* context, const Block* block,
             }
         }
 
-        if (!simd::contain_one(result_filter_data, rows)) {
+        if (memchr(result_filter_data, 0x1, rows) == nullptr) {
             *can_filter_all = true;
             return Status::OK();
         }
@@ -1063,7 +1063,7 @@ Status VExpr::execute_filter(VExprContext* context, const Block* block,
             result_filter_data[i] &= filter_data[i];
         }
 
-        if (!simd::contain_one(result_filter_data, rows)) {
+        if (memchr(result_filter_data, 0x1, rows) == nullptr) {
             *can_filter_all = true;
             return Status::OK();
         }
