@@ -256,6 +256,10 @@ Status ShortCircuitCaseExpr::execute_column(VExprContext* context, const Block* 
     std::vector<ColumnAndSelector> columns_and_selectors;
     columns_and_selectors.resize(num_branches);
 
+    // if branch matches all rows, we can short-circuit the evaluation
+    bool short_circuit_early_exit = false;
+    int64_t executed_branches = 0;
+
     Selector* executor_selector = selector;
     size_t executor_count = count;
 
@@ -263,8 +267,12 @@ Status ShortCircuitCaseExpr::execute_column(VExprContext* context, const Block* 
 
     Selector left_not_matched_executor_selector;
     Selector left_not_matched_current_selector;
+    Selector matched_executor_selector;
+    Selector not_matched_executor_selector;
+    Selector not_matched_current_selector;
 
     for (int64_t i = 0; i < static_cast<int64_t>(_children.size()) - _has_else_expr; i += 2) {
+        executed_branches++;
         ColumnPtr when_column_ptr;
         RETURN_IF_ERROR(_children[i]->execute_column(context, block, executor_selector,
                                                      executor_count, when_column_ptr));
@@ -272,21 +280,19 @@ Status ShortCircuitCaseExpr::execute_column(VExprContext* context, const Block* 
         DCHECK(executor_selector == nullptr ||
                executor_selector->size() == when_column_ptr->size());
 
-        Selector matched_executor_selector;
-        Selector matched_current_selector;
-        Selector not_matched_executor_selector;
-        Selector not_matched_current_selector;
+        matched_executor_selector.clear();
+        Selector& matched_current_selector = columns_and_selectors[i / 2].selector;
+        not_matched_executor_selector.clear();
+        not_matched_current_selector.clear();
 
         execute_case_selector(when_column_ptr, executor_selector, executor_count, current_selector,
                               matched_executor_selector, matched_current_selector,
                               not_matched_executor_selector, not_matched_current_selector);
+        ColumnPtr& then_column_ptr = columns_and_selectors[i / 2].column;
 
-        ColumnPtr then_column_ptr;
         RETURN_IF_ERROR(_children[i + 1]->execute_column(context, block, &matched_executor_selector,
                                                          matched_executor_selector.size(),
                                                          then_column_ptr));
-        columns_and_selectors[i / 2].column = then_column_ptr;
-        columns_and_selectors[i / 2].selector.swap(matched_current_selector);
 
         left_not_matched_executor_selector.swap(not_matched_executor_selector);
         left_not_matched_current_selector.swap(not_matched_current_selector);
@@ -294,6 +300,18 @@ Status ShortCircuitCaseExpr::execute_column(VExprContext* context, const Block* 
         executor_selector = &left_not_matched_executor_selector;
         executor_count = left_not_matched_executor_selector.size();
         current_selector = &left_not_matched_current_selector;
+
+        if (executor_count == 0) {
+            short_circuit_early_exit = true;
+            columns_and_selectors.resize(executed_branches);
+            break;
+        }
+    }
+
+    if (short_circuit_early_exit) {
+        // All rows have been matched; no need to process else branch
+        result_column = dispatch_fill_columns(columns_and_selectors, count);
+        return Status::OK();
     }
 
     // handle the else branch
@@ -423,18 +441,26 @@ Status ShortCircuitCoalesceExpr::execute_column(VExprContext* context, const Blo
     Selector left_null_executor_selector;
     Selector left_null_current_selector;
 
+    // if branch matches all rows, we can short-circuit the evaluation
+    bool short_circuit_early_exit = false;
+    int64_t executed_branches = 0;
+    Selector null_executor_selector;
+    Selector null_current_selector;
+    Selector not_null_self_selector;
+
     for (int64_t i = 0; i < _children.size(); ++i) {
-        ColumnPtr child_column_ptr;
+        executed_branches++;
+        ColumnPtr& child_column_ptr = columns_and_selectors[i].column;
         RETURN_IF_ERROR(_children[i]->execute_column(context, block, executor_selector,
                                                      executor_count, child_column_ptr));
 
         DCHECK(executor_selector == nullptr ||
                executor_selector->size() == child_column_ptr->size());
 
-        Selector null_executor_selector;
-        Selector null_current_selector;
-        Selector not_null_current_selector;
-        Selector not_null_self_selector;
+        null_executor_selector.clear();
+        null_current_selector.clear();
+        Selector& not_null_current_selector = columns_and_selectors[i].selector;
+        not_null_self_selector.clear();
 
         execute_coalesce_selector(child_column_ptr, executor_selector, executor_count,
                                   current_selector, null_executor_selector, null_current_selector,
@@ -444,15 +470,24 @@ Status ShortCircuitCoalesceExpr::execute_column(VExprContext* context, const Blo
         child_column_ptr = filter_column_with_selector(child_column_ptr, &not_null_self_selector,
                                                        not_null_self_selector.size());
 
-        columns_and_selectors[i].column = child_column_ptr;
-        columns_and_selectors[i].selector.swap(not_null_current_selector);
-
         left_null_executor_selector.swap(null_executor_selector);
         left_null_current_selector.swap(null_current_selector);
 
         executor_selector = &left_null_executor_selector;
         executor_count = left_null_executor_selector.size();
         current_selector = &left_null_current_selector;
+
+        if (executor_count == 0) {
+            short_circuit_early_exit = true;
+            columns_and_selectors.resize(executed_branches);
+            break;
+        }
+    }
+
+    if (short_circuit_early_exit) {
+        // All rows have been matched; no need to process else branch
+        result_column = dispatch_fill_columns(columns_and_selectors, count);
+        return Status::OK();
     }
 
     // the remaining null rows at the end
