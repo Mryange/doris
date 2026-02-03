@@ -256,8 +256,6 @@ Status ShortCircuitCaseExpr::execute_column(VExprContext* context, const Block* 
     std::vector<ColumnAndSelector> columns_and_selectors;
     columns_and_selectors.resize(num_branches);
 
-    // if branch matches all rows, we can short-circuit the evaluation
-    bool short_circuit_early_exit = false;
     int64_t executed_branches = 0;
 
     Selector* executor_selector = selector;
@@ -302,16 +300,11 @@ Status ShortCircuitCaseExpr::execute_column(VExprContext* context, const Block* 
         current_selector = &left_not_matched_current_selector;
 
         if (executor_count == 0) {
-            short_circuit_early_exit = true;
             columns_and_selectors.resize(executed_branches);
-            break;
+            // All rows have been matched; no need to process other branch
+            result_column = dispatch_fill_columns(columns_and_selectors, count);
+            return Status::OK();
         }
-    }
-
-    if (short_circuit_early_exit) {
-        // All rows have been matched; no need to process else branch
-        result_column = dispatch_fill_columns(columns_and_selectors, count);
-        return Status::OK();
     }
 
     // handle the else branch
@@ -441,8 +434,6 @@ Status ShortCircuitCoalesceExpr::execute_column(VExprContext* context, const Blo
     Selector left_null_executor_selector;
     Selector left_null_current_selector;
 
-    // if branch matches all rows, we can short-circuit the evaluation
-    bool short_circuit_early_exit = false;
     int64_t executed_branches = 0;
     Selector null_executor_selector;
     Selector null_current_selector;
@@ -478,16 +469,11 @@ Status ShortCircuitCoalesceExpr::execute_column(VExprContext* context, const Blo
         current_selector = &left_null_current_selector;
 
         if (executor_count == 0) {
-            short_circuit_early_exit = true;
             columns_and_selectors.resize(executed_branches);
-            break;
+            // All rows have been matched; no need to process other branch
+            result_column = dispatch_fill_columns(columns_and_selectors, count);
+            return Status::OK();
         }
-    }
-
-    if (short_circuit_early_exit) {
-        // All rows have been matched; no need to process else branch
-        result_column = dispatch_fill_columns(columns_and_selectors, count);
-        return Status::OK();
     }
 
     // the remaining null rows at the end
