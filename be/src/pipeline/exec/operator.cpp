@@ -407,6 +407,7 @@ Status OperatorXBase::get_block_after_projects(RuntimeState* state, vectorized::
     }
     status = get_block(state, block, eos);
     RETURN_IF_ERROR(block->check_type_and_column());
+    DCHECK_LE(block->rows(), state->batch_size()) << " check failed in operator " << debug_string();
     return status;
 }
 

@@ -352,6 +352,8 @@ public:
                 COUNTER_UPDATE(local_state->_rows_returned_counter, rows);
                 COUNTER_UPDATE(local_state->_blocks_returned_counter, 1);
             }
+            DCHECK_LE(block->rows(), state->batch_size())
+                    << " check failed in operator " << OperatorX<LocalStateType>::debug_string();
         }
         return status;
     }
