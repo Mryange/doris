@@ -204,7 +204,7 @@ Status VectorizedFnCall::evaluate_inverted_index(VExprContext* context, uint32_t
     return _evaluate_inverted_index(context, _function, segment_num_rows);
 }
 
-Status VectorizedFnCall::_do_execute(VExprContext* context, const Block* block, Selector* selector,
+Status VectorizedFnCall::_do_execute(VExprContext* context, const Block* block, const Selector* selector,
                                      size_t count, ColumnPtr& result_column,
                                      ColumnPtr* arg_column) const {
     if (is_const_and_have_executed()) { // const have executed in open function
@@ -296,8 +296,8 @@ Status VectorizedFnCall::execute_runtime_filter(VExprContext* context, const Blo
     return _do_execute(context, block, nullptr, count, result_column, arg_column);
 }
 
-Status VectorizedFnCall::execute_column(VExprContext* context, const Block* block,
-                                        Selector* selector, size_t count,
+Status VectorizedFnCall::execute_column_impl(VExprContext* context, const Block* block,
+                                        const Selector* selector, size_t count,
                                         ColumnPtr& result_column) const {
     return _do_execute(context, block, selector, count, result_column, nullptr);
 }
