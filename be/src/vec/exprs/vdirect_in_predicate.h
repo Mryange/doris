@@ -55,7 +55,7 @@ public:
     }
 
     Status execute_column_impl(VExprContext* context, const Block* block, const Selector* selector,
-                          size_t count, ColumnPtr& result_column) const override {
+                               size_t count, ColumnPtr& result_column) const override {
         return _do_execute(context, block, nullptr, selector, count, result_column, nullptr);
     }
 
