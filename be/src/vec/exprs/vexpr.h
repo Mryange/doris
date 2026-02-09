@@ -161,6 +161,12 @@ public:
         DCHECK(selector == nullptr || selector->size() == count);
 
 #ifndef NDEBUG
+        // empty column test
+        Selector empty_selector;
+        DCHECK_EQ(empty_selector.size(), 0);
+        ColumnPtr empty_result_column;
+        RETURN_IF_ERROR(execute_column_impl(context, block, &empty_selector, 0, empty_result_column));
+        DCHECK_EQ(empty_result_column->size(), 0);
         RETURN_IF_ERROR(result_column->column_self_check());
         auto result_type = execute_type(block);
         RETURN_IF_ERROR(result_type->check_column(*result_column));
