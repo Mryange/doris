@@ -71,6 +71,11 @@ public:
         auto nested_type = data_type_array->get_nested_type();
         auto dest_column_ptr = ColumnString::create();
 
+        auto& dest_chars = dest_column_ptr->get_chars();
+        auto& dest_offsets = dest_column_ptr->get_offsets();
+
+        dest_offsets.resize_fill(src_column->size(), 0);
+
         auto sep_column =
                 ColumnView<TYPE_STRING>::create(block.get_by_position(arguments[1]).column);
 
@@ -79,7 +84,7 @@ public:
                     ColumnView<TYPE_STRING>::create(block.get_by_position(arguments[2]).column);
 
             _execute_string(*src.nested_col, *src.offsets_ptr, src.nested_nullmap_data, sep_column,
-                            null_replace_column, dest_column_ptr.get());
+                            null_replace_column, dest_chars, dest_offsets);
 
         } else {
             auto tmp_column_string = ColumnString::create();
@@ -91,7 +96,7 @@ public:
             auto null_replace_column = ColumnView<TYPE_STRING>::create(tmp_const_column);
 
             _execute_string(*src.nested_col, *src.offsets_ptr, src.nested_nullmap_data, sep_column,
-                            null_replace_column, dest_column_ptr.get());
+                            null_replace_column, dest_chars, dest_offsets);
         }
 
         block.replace_by_position(result, std::move(dest_column_ptr));
@@ -99,14 +104,29 @@ public:
     }
 
 private:
-    static void _fill_result_string(const StringRef& input_str, const StringRef& sep_str,
-                                    std::string& result_str, bool& is_first_elem) {
+    // same as ColumnString::insert_data
+    static void insert_to_chars(int64_t i, ColumnString::Chars& chars, uint32_t& total_size,
+                                const char* pos, size_t length) {
+        const size_t old_size = chars.size();
+        const size_t new_size = old_size + length;
+
+        if (length) {
+            ColumnString::check_chars_length(new_size, i);
+            chars.resize(new_size);
+            memcpy(chars.data() + old_size, pos, length);
+            total_size += length;
+        }
+    }
+
+    static void _fill_result_string(int64_t i, const StringRef& input_str, const StringRef& sep_str,
+                                    ColumnString::Chars& dest_chars, uint32_t& total_size,
+                                    bool& is_first_elem) {
         if (is_first_elem) {
-            result_str.append(input_str.data, input_str.size);
+            insert_to_chars(i, dest_chars, total_size, input_str.data, input_str.size);
             is_first_elem = false;
         } else {
-            result_str.append(sep_str.data, sep_str.size);
-            result_str.append(input_str.data, input_str.size);
+            insert_to_chars(i, dest_chars, total_size, sep_str.data, sep_str.size);
+            insert_to_chars(i, dest_chars, total_size, input_str.data, input_str.size);
         }
     }
 
@@ -114,10 +134,11 @@ private:
                                 const ColumnArray::Offsets64& src_offsets,
                                 const UInt8* src_null_map, ColumnView<TYPE_STRING>& sep_column,
                                 ColumnView<TYPE_STRING>& null_replace_column,
-                                ColumnString* dest_column_ptr) {
+                                ColumnString::Chars& dest_chars,
+                                ColumnString::Offsets& dest_offsets) {
         const auto& src_data = assert_cast<const ColumnString&>(src_column);
 
-        std::string result_str;
+        uint32_t total_size = 0;
 
         for (int64_t i = 0; i < src_offsets.size(); ++i) {
             auto begin = src_offsets[i - 1];
@@ -131,17 +152,17 @@ private:
             for (size_t j = begin; j < end; ++j) {
                 if (src_null_map && src_null_map[j]) {
                     if (null_replace_str.size != 0) {
-                        _fill_result_string(null_replace_str, sep_str, result_str, is_first_elem);
+                        _fill_result_string(i, null_replace_str, sep_str, dest_chars, total_size,
+                                            is_first_elem);
                     }
                     continue;
                 }
 
                 StringRef src_str_ref = src_data.get_data_at(j);
-                _fill_result_string(src_str_ref, sep_str, result_str, is_first_elem);
+                _fill_result_string(i, src_str_ref, sep_str, dest_chars, total_size, is_first_elem);
             }
 
-            dest_column_ptr->insert_data(result_str.c_str(), result_str.size());
-            result_str.clear();
+            dest_offsets[i] = total_size;
         }
     }
 };
