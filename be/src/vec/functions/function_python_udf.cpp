@@ -109,6 +109,7 @@ Status PythonFunctionCall::execute_impl(FunctionContext* context, Block& block,
                                         size_t num_rows) const {
     if (num_rows == 0) {
         block.get_by_position(result).column = _return_type->create_column();
+        return Status::OK();
     }
 
     auto client = reinterpret_cast<PythonUDFClient*>(
