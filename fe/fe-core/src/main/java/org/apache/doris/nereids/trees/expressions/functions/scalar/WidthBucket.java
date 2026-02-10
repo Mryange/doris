@@ -83,6 +83,11 @@ public class WidthBucket extends ScalarFunction implements ExplicitlyCastableSig
     }
 
     @Override
+    public void checkLegalityAfterRewrite() {
+        checkLegalityBeforeTypeCoercion();
+    }
+
+    @Override
     public List<FunctionSignature> getSignatures() {
         return SIGNATURES;
     }
