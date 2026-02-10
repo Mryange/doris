@@ -626,7 +626,7 @@ TEST_F(ColumnArrayTest, CreateArrayTest) {
         // Test expected exception cases
         // 1. nested_column is ColumnConst (violates check_const_only_in_top_level)
         auto tmp_data_col = column->get_data_ptr()->clone_empty();
-        tmp_data_col->insert_default();  // ColumnConst requires nested column size = 1
+        tmp_data_col->insert_default(); // ColumnConst requires nested column size = 1
         auto const_data = ColumnConst::create(std::move(tmp_data_col), column_size);
         EXPECT_ANY_THROW({
             auto new_array_column =
@@ -635,7 +635,7 @@ TEST_F(ColumnArrayTest, CreateArrayTest) {
 
         // 2. offsets_column is ColumnConst (violates check_const_only_in_top_level)
         auto tmp_offsets_col = column->get_offsets_ptr()->clone_empty();
-        tmp_offsets_col->insert_default();  // ColumnConst requires nested column size = 1
+        tmp_offsets_col->insert_default(); // ColumnConst requires nested column size = 1
         auto const_offsets = ColumnConst::create(std::move(tmp_offsets_col), column_size);
         EXPECT_ANY_THROW({
             auto new_array_column =
