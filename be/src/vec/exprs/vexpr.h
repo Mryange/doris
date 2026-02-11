@@ -152,6 +152,9 @@ public:
 
     Status execute_column(VExprContext* context, const Block* block, const Selector* selector,
                           size_t count, ColumnPtr& result_column) const {
+        if(count == 0) {
+            return Status::InternalError("Expr {} execute with empty input", expr_name());
+        }
         RETURN_IF_ERROR(execute_column_impl(context, block, selector, count, result_column));
         if (result_column->size() != count) {
             return Status::InternalError(
