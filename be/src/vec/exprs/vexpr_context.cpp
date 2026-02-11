@@ -259,6 +259,8 @@ Status VExprContext::short_circuit_execute_conjuncts(const VExprContextSPtrs& ct
         selector[i] = i;
     }
 
+    *can_filter_all = false;
+
     for (const auto& ctx : ctxs) {
         const auto& expr = ctx->root();
         ColumnPtr result_column;
