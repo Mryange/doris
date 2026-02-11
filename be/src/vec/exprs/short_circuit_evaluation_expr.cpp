@@ -89,8 +89,8 @@ std::string ShortCircuitExpr::debug_string() const {
 // These are issues with the exprs themselves, but for convenience, we handle this case uniformly in short-circuit expr.
 /// TODO: Once all exprs support size-0 columns in the future, this function can be removed.
 [[nodiscard]] Status try_early_return_on_empty(const VExprSPtr& expr, VExprContext* context,
-                                               const Block* block, Selector* selector, size_t count,
-                                               ColumnPtr& result_columnn) {
+                                               const Block* block, const Selector* selector,
+                                               size_t count, ColumnPtr& result_columnn) {
     if (count == 0) {
         result_columnn = expr->execute_type(block)->create_column();
         DCHECK_EQ(result_columnn->size(), 0);
