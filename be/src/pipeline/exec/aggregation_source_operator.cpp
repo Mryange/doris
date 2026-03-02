@@ -24,6 +24,9 @@
 #include "pipeline/exec/operator.h"
 #include "runtime/thread_context.h"
 #include "util/runtime_profile.h"
+#include "vec/aggregate_functions/aggregate_function_count.h"
+#include "vec/columns/column_fixed_length_object.h"
+#include "vec/data_types/data_type_fixed_length_object.h"
 #include "vec/exprs/vectorized_agg_fn.h"
 #include "vec/exprs/vexpr_fwd.h"
 
@@ -69,7 +72,13 @@ Status AggLocalState::init(RuntimeState* state, LocalStateInfo& info) {
             };
         }
     } else {
-        if (p._needs_finalize) {
+        if (_shared_state->is_simple_count) {
+            // Simple count: both finalize and non-finalize paths use the same method
+            _executor.get_result = [this](RuntimeState* state, vectorized::Block* block,
+                                          bool* eos) {
+                return _get_results_for_simple_count(state, block, eos);
+            };
+        } else if (p._needs_finalize) {
             _executor.get_result = [this](RuntimeState* state, vectorized::Block* block,
                                           bool* eos) {
                 return _get_with_serialized_key_result(state, block, eos);
@@ -435,6 +444,153 @@ Status AggLocalState::_get_without_key_result(RuntimeState* state, vectorized::B
     return Status::OK();
 }
 
+void AggLocalState::_materialize_simple_count_results() {
+    auto& shared_state = *_shared_state;
+    auto& p = _parent->template cast<AggSourceOperatorX>();
+    size_t key_size = shared_state.probe_expr_ctxs.size();
+
+    // Initialize key columns
+    shared_state.simple_count_key_columns.resize(key_size);
+    for (size_t i = 0; i < key_size; ++i) {
+        shared_state.simple_count_key_columns[i] =
+                shared_state.probe_expr_ctxs[i]->root()->data_type()->create_column();
+    }
+
+    // Initialize count column based on finalize mode
+    if (p._needs_finalize) {
+        // Finalize: output as ColumnInt64
+        shared_state.simple_count_value_column = vectorized::ColumnInt64::create();
+    } else {
+        // Non-finalize (Phase 1 serialize): output as ColumnFixedLengthObject
+        shared_state.simple_count_value_column =
+                vectorized::ColumnFixedLengthObject::create(sizeof(vectorized::UInt64));
+    }
+
+    std::visit(
+            vectorized::Overload {
+                    [&](std::monostate& arg) -> void {
+                        throw doris::Exception(ErrorCode::INTERNAL_ERROR, "uninited hash table");
+                    },
+                    [&](auto& agg_method) -> void {
+                        auto& data = *agg_method.hash_table;
+                        using KeyType = std::decay_t<decltype(agg_method)>::Key;
+                        using DataType = std::decay_t<decltype(data)>;
+
+                        // Only PHHashMap-based hash tables support simple count
+                        // (detected at sink side). Guard with if constexpr using type
+                        // trait to avoid triggering StringHashTable iterator bugs.
+                        if constexpr (vectorized::is_phmap_v<DataType>) {
+                            const size_t total_size = data.size();
+                            std::vector<KeyType> keys;
+                            keys.reserve(total_size);
+
+                            auto& count_col = shared_state.simple_count_value_column;
+
+                            if (p._needs_finalize) {
+                                auto& int64_col = assert_cast<vectorized::ColumnInt64&>(*count_col);
+                                int64_col.reserve(total_size);
+                                for (auto it = data.begin(); it != data.end(); ++it) {
+                                    keys.push_back(it.get_first());
+                                    auto count = *reinterpret_cast<const vectorized::UInt64*>(
+                                            &it.get_second());
+                                    int64_col.get_data().push_back(count);
+                                }
+                            } else {
+                                auto& fixed_col = assert_cast<vectorized::ColumnFixedLengthObject&>(
+                                        *count_col);
+                                fixed_col.resize(total_size);
+                                auto* col_data = fixed_col.get_data().data();
+                                size_t idx = 0;
+                                for (auto it = data.begin(); it != data.end(); ++it) {
+                                    keys.push_back(it.get_first());
+                                    auto count = *reinterpret_cast<const vectorized::UInt64*>(
+                                            &it.get_second());
+                                    *reinterpret_cast<vectorized::UInt64*>(
+                                            &col_data[sizeof(vectorized::UInt64) * idx]) = count;
+                                    ++idx;
+                                }
+                            }
+
+                            // Convert keys to columns
+                            agg_method.insert_keys_into_columns(
+                                    keys, shared_state.simple_count_key_columns,
+                                    (uint32_t)keys.size());
+
+                            // PHHashMap doesn't have null keys (DataWithNullKey types are
+                            // excluded from simple count optimization), so no null key handling
+                            // is needed here.
+
+                            shared_state.simple_count_total_rows =
+                                    shared_state.simple_count_key_columns[0]->size();
+                        } else {
+                            // This branch is never reached at runtime because is_simple_count
+                            // is only set to true for hash tables that support key iteration.
+                            throw doris::Exception(ErrorCode::INTERNAL_ERROR,
+                                                   "simple count not supported for this hash "
+                                                   "table type");
+                        }
+                    }},
+            shared_state.agg_data->method_variant);
+
+    shared_state.simple_count_materialized = true;
+}
+
+Status AggLocalState::_get_results_for_simple_count(RuntimeState* state, vectorized::Block* block,
+                                                    bool* eos) {
+    SCOPED_TIMER(_get_results_timer);
+    auto& shared_state = *_shared_state;
+    auto& p = _parent->template cast<AggSourceOperatorX>();
+
+    // Materialize all results from hash table on first call
+    if (!shared_state.simple_count_materialized) {
+        _materialize_simple_count_results();
+    }
+
+    size_t key_size = shared_state.probe_expr_ctxs.size();
+    size_t& offset = shared_state.simple_count_read_offset;
+    size_t total = shared_state.simple_count_total_rows;
+    size_t batch = std::min(size_t(state->batch_size()), total - offset);
+
+    if (batch == 0) {
+        *eos = true;
+        return Status::OK();
+    }
+
+    // Build output block
+    vectorized::ColumnsWithTypeAndName columns_with_schema;
+
+    // Key columns: extract range [offset, offset+batch)
+    for (size_t i = 0; i < key_size; ++i) {
+        auto col = shared_state.probe_expr_ctxs[i]->root()->data_type()->create_column();
+        col->insert_range_from(*shared_state.simple_count_key_columns[i], offset, batch);
+        columns_with_schema.emplace_back(std::move(col),
+                                         shared_state.probe_expr_ctxs[i]->root()->data_type(),
+                                         shared_state.probe_expr_ctxs[i]->root()->expr_name());
+    }
+
+    // Value column: extract range [offset, offset+batch)
+    if (p._needs_finalize) {
+        auto col = vectorized::ColumnInt64::create();
+        col->insert_range_from(*shared_state.simple_count_value_column, offset, batch);
+        columns_with_schema.emplace_back(std::move(col),
+                                         std::make_shared<vectorized::DataTypeInt64>(), "");
+    } else {
+        auto col = vectorized::ColumnFixedLengthObject::create(sizeof(vectorized::UInt64));
+        col->insert_range_from(*shared_state.simple_count_value_column, offset, batch);
+        columns_with_schema.emplace_back(
+                std::move(col), std::make_shared<vectorized::DataTypeFixedLengthObject>(), "");
+    }
+
+    *block = vectorized::Block(columns_with_schema);
+    offset += batch;
+
+    if (offset >= total) {
+        *eos = true;
+    }
+
+    return Status::OK();
+}
+
 AggSourceOperatorX::AggSourceOperatorX(ObjectPool* pool, const TPlanNode& tnode, int operator_id,
                                        const DescriptorTbl& descs)
         : Base(pool, tnode, operator_id, descs),
@@ -536,7 +692,9 @@ size_t AggSourceOperatorX::get_estimated_memory_size_for_merging(RuntimeState* s
                     },
                     [&](auto& agg_method) { return agg_method.hash_table->estimate_memory(rows); }},
             local_state._shared_state->agg_data->method_variant);
-    size += local_state._shared_state->aggregate_data_container->estimate_memory(rows);
+    if (local_state._shared_state->aggregate_data_container) {
+        size += local_state._shared_state->aggregate_data_container->estimate_memory(rows);
+    }
     return size;
 }
 

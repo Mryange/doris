@@ -321,6 +321,20 @@ public:
     bool enable_spill = false;
     bool reach_limit = false;
 
+    // Simple count optimization: when the only aggregate function is COUNT(*) or
+    // COUNT(non-nullable col) in Phase 1, the count value is inlined directly
+    // into the hash table's mapped slot (reinterpreting char* as UInt64),
+    // bypassing AggregateDataContainer and virtual function dispatch.
+    bool is_simple_count = false;
+
+    // Materialized results for simple count source-side iteration.
+    // Built on first source call by iterating the hash table.
+    vectorized::MutableColumns simple_count_key_columns;
+    vectorized::MutableColumnPtr simple_count_value_column;
+    size_t simple_count_total_rows = 0;
+    size_t simple_count_read_offset = 0;
+    bool simple_count_materialized = false;
+
     int64_t limit = -1;
     bool do_sort_limit = false;
     vectorized::MutableColumns limit_columns;
@@ -389,6 +403,11 @@ private:
     vectorized::MutableColumns _get_keys_hash_table();
 
     void _close_with_serialized_key() {
+        // When is_simple_count, the hash table's mapped slots store inline UInt64
+        // counts (not real AggregateDataPtr pointers), so skip destroy.
+        if (is_simple_count) {
+            return;
+        }
         std::visit(
                 vectorized::Overload {[&](std::monostate& arg) -> void {
                                           // Do nothing

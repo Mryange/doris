@@ -52,6 +52,9 @@ protected:
                                            bool* eos);
     Status _get_results_with_serialized_key(RuntimeState* state, vectorized::Block* block,
                                             bool* eos);
+    Status _get_results_for_simple_count(RuntimeState* state, vectorized::Block* block, bool* eos);
+    // Materialize all keys and counts from hash table into shared state columns.
+    void _materialize_simple_count_results();
     Status _create_agg_status(vectorized::AggregateDataPtr data);
     void _make_nullable_output_key(vectorized::Block* block) {
         if (block->rows() != 0) {

@@ -35,9 +35,22 @@
 #include "vec/core/types.h"
 #include "vec/utils/template_helpers.hpp"
 
+// Forward declaration needed for is_phmap_v type trait below.
+template <typename Key, typename Mapped, typename HashMethod>
+class PHHashMap;
+
 namespace doris::vectorized {
 #include "common/compile_check_begin.h"
 constexpr auto BITSIZE = 8;
+
+// Type trait to detect PHHashMap without triggering iterator instantiation.
+// Used by simple count optimization to restrict to PHHashMap-based hash tables
+// (whose iterators support get_first()/get_second() for key-value iteration).
+template <typename T>
+inline constexpr bool is_phmap_v = false;
+
+template <typename K, typename V, typename H>
+inline constexpr bool is_phmap_v<PHHashMap<K, V, H>> = true;
 
 template <typename Base>
 struct DataWithNullKey;

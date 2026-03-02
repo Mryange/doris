@@ -26,6 +26,7 @@
 #include "runtime/primitive_type.h"
 #include "runtime/thread_context.h"
 #include "util/runtime_profile.h"
+#include "vec/aggregate_functions/aggregate_function_count.h"
 #include "vec/aggregate_functions/aggregate_function_simple_factory.h"
 #include "vec/common/hash_table/hash.h"
 #include "vec/exprs/vectorized_agg_fn.h"
@@ -114,25 +115,52 @@ Status AggSinkLocalState::open(RuntimeState* state) {
     } else {
         RETURN_IF_ERROR(_init_hash_method(Base::_shared_state->probe_expr_ctxs));
 
-        std::visit(vectorized::Overload {[&](std::monostate& arg) {
-                                             throw doris::Exception(ErrorCode::INTERNAL_ERROR,
-                                                                    "uninited hash table");
-                                         },
-                                         [&](auto& agg_method) {
-                                             using HashTableType =
-                                                     std::decay_t<decltype(agg_method)>;
-                                             using KeyType = typename HashTableType::Key;
+        // Detect simple count optimization: single COUNT(*) or COUNT(non-nullable col)
+        // in Phase 1, non-merge mode, with PHHashMap-based hash table (supports key iteration).
+        // StringHashMap and DataWithNullKey are excluded because their iterators have
+        // compatibility issues or lack get_first() support.
+        if (p._aggregate_evaluators.size() == 1 && !p._is_merge) {
+            auto* fn = p._aggregate_evaluators[0]->function().get();
+            if (dynamic_cast<const vectorized::AggregateFunctionCount*>(fn)) {
+                bool supports_key_iteration = std::visit(
+                        vectorized::Overload {
+                                [](std::monostate&) { return false; },
+                                [](auto& agg_method) {
+                                    using HashTableType =
+                                            std::decay_t<decltype(*agg_method.hash_table)>;
+                                    // Use type trait to detect PHHashMap without triggering
+                                    // iterator instantiation (avoids StringHashTable bug).
+                                    return vectorized::is_phmap_v<HashTableType>;
+                                }},
+                        _agg_data->method_variant);
+                if (supports_key_iteration) {
+                    Base::_shared_state->is_simple_count = true;
+                }
+            }
+        }
 
-                                             /// some aggregate functions (like AVG for decimal) have align issues.
-                                             Base::_shared_state->aggregate_data_container =
-                                                     std::make_unique<AggregateDataContainer>(
-                                                             sizeof(KeyType),
-                                                             ((p._total_size_of_aggregate_states +
-                                                               p._align_aggregate_states - 1) /
-                                                              p._align_aggregate_states) *
-                                                                     p._align_aggregate_states);
-                                         }},
-                   _agg_data->method_variant);
+        if (!Base::_shared_state->is_simple_count) {
+            std::visit(
+                    vectorized::Overload {
+                            [&](std::monostate& arg) {
+                                throw doris::Exception(ErrorCode::INTERNAL_ERROR,
+                                                       "uninited hash table");
+                            },
+                            [&](auto& agg_method) {
+                                using HashTableType = std::decay_t<decltype(agg_method)>;
+                                using KeyType = typename HashTableType::Key;
+
+                                /// some aggregate functions (like AVG for decimal) have align issues.
+                                Base::_shared_state->aggregate_data_container =
+                                        std::make_unique<AggregateDataContainer>(
+                                                sizeof(KeyType),
+                                                ((p._total_size_of_aggregate_states +
+                                                  p._align_aggregate_states - 1) /
+                                                 p._align_aggregate_states) *
+                                                        p._align_aggregate_states);
+                            }},
+                    _agg_data->method_variant);
+        }
         if (p._is_merge) {
             _executor = std::make_unique<Executor<false, true>>();
         } else {
@@ -242,7 +270,10 @@ void AggSinkLocalState::_update_memusage_with_serialized_key() {
                            auto& data = *agg_method.hash_table;
                            int64_t memory_usage_arena = Base::_shared_state->agg_arena_pool.size();
                            int64_t memory_usage_container =
-                                   _shared_state->aggregate_data_container->memory_usage();
+                                   _shared_state->aggregate_data_container
+                                           ? _shared_state->aggregate_data_container
+                                                     ->memory_usage()
+                                           : 0;
                            int64_t hash_table_memory_usage = data.get_buffer_size_in_bytes();
 
                            COUNTER_SET(_memory_usage_arena, memory_usage_arena);
@@ -464,6 +495,29 @@ Status AggSinkLocalState::_execute_with_serialized_key_helper(vectorized::Block*
     }
 
     auto rows = (uint32_t)block->rows();
+
+    // Simple count fast path: inline count in hash table, skip aggregate evaluators.
+    if (Base::_shared_state->is_simple_count) {
+        if constexpr (limit) {
+            if (!_shared_state->do_sort_limit) {
+                // Limit reached: only increment existing keys
+                _find_and_increment_simple_count(key_columns, rows);
+                return Status::OK();
+            }
+        }
+        _emplace_into_hash_table_for_simple_count(key_columns, rows);
+        if (!limit && _should_limit_output && !Base::_shared_state->enable_spill) {
+            const size_t hash_table_size = _get_hash_table_size();
+            _shared_state->reach_limit =
+                    hash_table_size >=
+                    (_shared_state->do_sort_limit
+                             ? Base::_parent->template cast<AggSinkOperatorX>()._limit *
+                                       config::topn_agg_limit_multiplier
+                             : Base::_parent->template cast<AggSinkOperatorX>()._limit);
+        }
+        return Status::OK();
+    }
+
     if (_places.size() < rows) {
         _places.resize(rows);
     }
@@ -922,6 +976,71 @@ Status AggSinkLocalState::close(RuntimeState* state, Status exec_status) {
     std::vector<char> tmp_deserialize_buffer;
     _deserialize_buffer.swap(tmp_deserialize_buffer);
     return Base::close(state, exec_status);
+}
+
+void AggSinkLocalState::_emplace_into_hash_table_for_simple_count(
+        vectorized::ColumnRawPtrs& key_columns, uint32_t num_rows) {
+    std::visit(vectorized::Overload {
+                       [&](std::monostate& arg) -> void {
+                           throw doris::Exception(ErrorCode::INTERNAL_ERROR, "uninited hash table");
+                       },
+                       [&](auto& agg_method) -> void {
+                           SCOPED_TIMER(_hash_table_compute_timer);
+                           using HashMethodType = std::decay_t<decltype(agg_method)>;
+                           using AggState = typename HashMethodType::State;
+                           AggState state(key_columns);
+                           agg_method.init_serialized_keys(key_columns, num_rows);
+
+                           // Creator: persist string keys but initialize count to 0 (not allocate
+                           // agg state). The loop below will increment to 1.
+                           auto creator = [this](const auto& ctor, auto& key, auto& origin) {
+                               HashMethodType::try_presis_key_and_origin(
+                                       key, origin, Base::_shared_state->agg_arena_pool);
+                               ctor(key, nullptr); // nullptr = UInt64(0)
+                           };
+
+                           auto creator_for_null_key = [](auto& mapped) {
+                               mapped = nullptr; // UInt64(0)
+                           };
+
+                           SCOPED_TIMER(_hash_table_emplace_timer);
+                           for (size_t i = 0; i < num_rows; ++i) {
+                               // lazy_emplace returns AggregateDataPtr* (pointer to mapped slot)
+                               auto mapped_ptr = agg_method.lazy_emplace(state, i, creator,
+                                                                         creator_for_null_key);
+                               // Reinterpret the char* slot as UInt64 and increment
+                               ++(*reinterpret_cast<vectorized::UInt64*>(mapped_ptr));
+                           }
+
+                           COUNTER_UPDATE(_hash_table_input_counter, num_rows);
+                       }},
+               _agg_data->method_variant);
+}
+
+void AggSinkLocalState::_find_and_increment_simple_count(vectorized::ColumnRawPtrs& key_columns,
+                                                         uint32_t num_rows) {
+    std::visit(vectorized::Overload {
+                       [&](std::monostate& arg) -> void {
+                           throw doris::Exception(ErrorCode::INTERNAL_ERROR, "uninited hash table");
+                       },
+                       [&](auto& agg_method) -> void {
+                           SCOPED_TIMER(_hash_table_compute_timer);
+                           using HashMethodType = std::decay_t<decltype(agg_method)>;
+                           using AggState = typename HashMethodType::State;
+                           AggState state(key_columns);
+                           agg_method.init_serialized_keys(key_columns, num_rows);
+
+                           SCOPED_TIMER(_hash_table_emplace_timer);
+                           for (size_t i = 0; i < num_rows; ++i) {
+                               auto find_result =
+                                       agg_method.find(state, i);
+                               if (find_result.is_found()) {
+                                   auto& mapped = find_result.get_mapped();
+                                   ++(*reinterpret_cast<vectorized::UInt64*>(&mapped));
+                               }
+                           }
+                       }},
+               _agg_data->method_variant);
 }
 
 } // namespace doris::pipeline
