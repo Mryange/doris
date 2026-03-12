@@ -21,8 +21,8 @@
 
 #include "core/data_type/data_type_ipv4.h"
 #include "core/data_type/data_type_ipv6.h"
-#include "exprs/function/cast/cast_to_ip.h"
 #include "exprs/function/cast/cast_base.h"
+#include "exprs/function/cast/cast_to_ip.h"
 
 namespace doris {
 
