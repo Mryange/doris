@@ -27,7 +27,7 @@
 #include "core/value/timestamptz_value.h"
 #include "exprs/function/cast/cast_base.h"
 #include "exprs/function/cast/cast_test.h"
-#include "exprs/function/cast/cast_to_date.h"
+#include "exprs/function/cast/cast_to_date_or_datetime_impl.hpp"
 #include "testutil/column_helper.h"
 #include "testutil/datetime_ut_util.h"
 #include "testutil/mock/mock_runtime_state.h"

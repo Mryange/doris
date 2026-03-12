@@ -17,14 +17,15 @@
 
 #pragma once
 
-#include "core/data_type_serde/data_type_serde.h"
 #include "core/types.h"
+#include "core/value/ipv4_value.h"
+#include "core/value/ipv6_value.h"
 #include "core/value/time_value.h"
-#include "exprs/function/cast/cast_base.h"
+#include "exprs/function/cast/cast_parameters.h"
+#include "exprs/function_context.h"
 #include "util/mysql_global.h"
 #include "util/to_string.h"
 namespace doris {
-#include "common/compile_check_begin.h"
 struct CastToString {
     template <class SRC>
     static inline std::string from_number(const SRC& from);
@@ -539,35 +540,7 @@ public:
     static Status execute_impl(FunctionContext* context, Block& block,
                                const ColumnNumbers& arguments, uint32_t result,
                                size_t input_rows_count,
-                               const NullMap::value_type* null_map = nullptr) {
-        const auto& col_with_type_and_name = block.get_by_position(arguments[0]);
-        const IDataType& type = *col_with_type_and_name.type;
-        const IColumn& col_from = *col_with_type_and_name.column;
-
-        auto col_to = ColumnString::create();
-
-        DataTypeSerDe::FormatOptions options;
-        auto time_zone = cctz::utc_time_zone();
-        options.timezone =
-                (context && context->state()) ? &context->state()->timezone_obj() : &time_zone;
-        type.get_serde()->to_string_batch(col_from, *col_to, options);
-
-        block.replace_by_position(result, std::move(col_to));
-        return Status::OK();
-    }
+                               const NullMap::value_type* null_map = nullptr);
 };
 
-namespace CastWrapper {
-
-inline WrapperType create_string_wrapper(const DataTypePtr& from_type) {
-    return [](FunctionContext* context, Block& block, const ColumnNumbers& arguments,
-              uint32_t result, size_t input_rows_count,
-              const NullMap::value_type* null_map = nullptr) {
-        return CastToStringFunction::execute_impl(context, block, arguments, result,
-                                                  input_rows_count, null_map);
-    };
-}
-
-}; // namespace CastWrapper
-} // namespace doris
-#include "common/compile_check_end.h"
+}; // namespace doris

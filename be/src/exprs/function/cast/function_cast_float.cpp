@@ -15,17 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#pragma once
+// This translation unit is the ONLY place that includes cast_to_float.h.
+// All CastToImpl<CastMode, From, ToFloatType> template instantiations are
+// confined here, keeping them out of function_cast.cpp.
 
-#include <type_traits>
-
-#include "core/data_type/data_type_decimal.h"
 #include "core/data_type/data_type_number.h"
-#include "core/data_type/primitive_type.h"
 #include "exprs/function/cast/cast_to_basic_number_common.h"
 
 namespace doris {
 #include "common/compile_check_begin.h"
+
 // cast bool, integer, float to double, will not overflow
 template <CastModeType CastMode, typename FromDataType, typename ToDataType>
     requires(IsDataTypeFloat<ToDataType> && IsDataTypeNumber<FromDataType>)
@@ -97,6 +96,8 @@ public:
     }
 };
 
+#include "common/compile_check_end.h"
+
 namespace CastWrapper {
 
 // max float: 3.40282e+38
@@ -138,6 +139,19 @@ WrapperType create_float_wrapper(FunctionContext* context, const DataTypePtr& fr
                                        null_map);
     };
 }
+
+WrapperType create_float_wrapper(FunctionContext* context, const DataTypePtr& from_type,
+                                 PrimitiveType to_type) {
+    switch (to_type) {
+    case TYPE_FLOAT:
+        return create_float_wrapper<DataTypeFloat32>(context, from_type);
+    case TYPE_DOUBLE:
+        return create_float_wrapper<DataTypeFloat64>(context, from_type);
+    default:
+        return create_unsupport_wrapper(
+                fmt::format("CAST AS float: unsupported to_type {}", type_to_string(to_type)));
+    }
+}
+
 } // namespace CastWrapper
-#include "common/compile_check_end.h"
 } // namespace doris

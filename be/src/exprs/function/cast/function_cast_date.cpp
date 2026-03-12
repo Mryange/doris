@@ -15,34 +15,204 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#pragma once
+// This translation unit is the ONLY place that includes cast_to_date.h and
+// cast_to_timestamptz.h. All CastToImpl<CastMode, From, ToDatelikeType> template
+// instantiations are confined here, keeping them out of function_cast.cpp.
+// Note: cast_to_date.h transitively pulls in cast_to_datetimev2_impl.hpp (~1072
+// lines) and other heavy .hpp files; isolating them here avoids the cost for
+// all other translation units.
 
-#include <sys/types.h>
-
-#include <cstdint>
-#include <cstdlib>
-#include <type_traits>
-
-#include "common/status.h"
-#include "core/binary_cast.hpp"
-#include "core/column/column_nullable.h"
+#include "core/data_type/data_type_date.h"
 #include "core/data_type/data_type_date_or_datetime_v2.h"
 #include "core/data_type/data_type_date_time.h"
-#include "core/data_type/data_type_decimal.h" // IWYU pragma: keep
-#include "core/data_type/data_type_number.h"
-#include "core/data_type/data_type_string.h"
 #include "core/data_type/data_type_time.h"
-#include "core/data_type/primitive_type.h"
-#include "core/data_type_serde/data_type_serde.h"
-#include "core/types.h"
-#include "core/value/time_value.h"
-#include "core/value/vdatetime_value.h"
-#include "exprs/function/cast/cast_base.h"
-#include "exprs/function/cast/cast_to_datetimev2_impl.hpp"
-#include "runtime/runtime_state.h"
+#include "exprs/function/cast/cast_to_timestamptz.h"
 
 namespace doris {
 #include "common/compile_check_begin.h"
+
+// CastToImpl specializations from cast_to_timestamptz.h
+template <CastModeType Mode>
+class CastToImpl<Mode, DataTypeString, DataTypeTimeStampTz> : public CastToBase {
+public:
+    Status execute_impl(FunctionContext* context, Block& block, const ColumnNumbers& arguments,
+                        uint32_t result, size_t input_rows_count,
+                        const NullMap::value_type* null_map = nullptr) const override {
+        const auto& col_from = assert_cast<const DataTypeString::ColumnType&>(
+                *block.get_by_position(arguments[0]).column);
+
+        auto to_type = block.get_by_position(result).type;
+        auto serde = remove_nullable(to_type)->get_serde();
+        MutableColumnPtr column_to;
+
+        DataTypeSerDe::FormatOptions options;
+        options.timezone = &context->state()->timezone_obj();
+
+        if constexpr (Mode == CastModeType::NonStrictMode) {
+            auto to_nullable_type = make_nullable(to_type);
+            column_to = to_nullable_type->create_column();
+            auto& nullable_col_to = assert_cast<ColumnNullable&>(*column_to);
+            RETURN_IF_ERROR(serde->from_string_batch(col_from, nullable_col_to, options));
+        } else if constexpr (Mode == CastModeType::StrictMode) {
+            column_to = to_type->create_column();
+            RETURN_IF_ERROR(
+                    serde->from_string_strict_mode_batch(col_from, *column_to, options, null_map));
+        }
+
+        block.get_by_position(result).column = std::move(column_to);
+        return Status::OK();
+    }
+};
+
+template <>
+class CastToImpl<CastModeType::StrictMode, DataTypeDateTimeV2, DataTypeTimeStampTz>
+        : public CastToBase {
+public:
+    Status execute_impl(FunctionContext* context, Block& block, const ColumnNumbers& arguments,
+                        uint32_t result, size_t input_rows_count,
+                        const NullMap::value_type* null_map = nullptr) const override {
+        const auto& col_from =
+                assert_cast<const ColumnDateTimeV2&>(*block.get_by_position(arguments[0]).column)
+                        .get_data();
+
+        auto col_to = ColumnTimeStampTz::create(input_rows_count);
+        auto& col_to_data = col_to->get_data();
+        const auto& local_time_zone = context->state()->timezone_obj();
+
+        const auto dt_scale = block.get_by_position(arguments[0]).type->get_scale();
+        const auto tz_scale = block.get_by_position(result).type->get_scale();
+
+        for (int i = 0; i < input_rows_count; ++i) {
+            if (null_map && null_map[i]) {
+                continue;
+            }
+
+            DateV2Value<DateTimeV2ValueType> from_dt {col_from[i]};
+            TimestampTzValue tz_value;
+
+            if (!tz_value.from_datetime(from_dt, local_time_zone, dt_scale, tz_scale)) {
+                return Status::InternalError(
+                        "can not cast from  datetime : {} to timestamptz in timezone : {}",
+                        from_dt.to_string(), context->state()->timezone());
+            }
+
+            col_to_data[i] = tz_value;
+        }
+        block.get_by_position(result).column = std::move(col_to);
+        return Status::OK();
+    }
+};
+
+template <>
+class CastToImpl<CastModeType::NonStrictMode, DataTypeDateTimeV2, DataTypeTimeStampTz>
+        : public CastToBase {
+public:
+    Status execute_impl(FunctionContext* context, Block& block, const ColumnNumbers& arguments,
+                        uint32_t result, size_t input_rows_count,
+                        const NullMap::value_type*) const override {
+        const auto& col_from =
+                assert_cast<const ColumnDateTimeV2&>(*block.get_by_position(arguments[0]).column)
+                        .get_data();
+
+        auto col_to = ColumnTimeStampTz::create(input_rows_count);
+        auto& col_to_data = col_to->get_data();
+        auto col_null = ColumnBool::create(input_rows_count, 0);
+        auto& col_null_map = col_null->get_data();
+        const auto& local_time_zone = context->state()->timezone_obj();
+
+        const auto dt_scale = block.get_by_position(arguments[0]).type->get_scale();
+        const auto tz_scale = block.get_by_position(result).type->get_scale();
+
+        for (int i = 0; i < input_rows_count; ++i) {
+            DateV2Value<DateTimeV2ValueType> from_dt {col_from[i]};
+            TimestampTzValue tz_value {};
+
+            if (tz_value.from_datetime(from_dt, local_time_zone, dt_scale, tz_scale)) {
+                col_to_data[i] = tz_value;
+            } else {
+                col_null_map[i] = true;
+            }
+        }
+
+        block.get_by_position(result).column =
+                ColumnNullable::create(std::move(col_to), std::move(col_null));
+        return Status::OK();
+    }
+};
+
+template <>
+class CastToImpl<CastModeType::StrictMode, DataTypeTimeStampTz, DataTypeTimeStampTz>
+        : public CastToBase {
+public:
+    Status execute_impl(FunctionContext* context, Block& block, const ColumnNumbers& arguments,
+                        uint32_t result, size_t input_rows_count,
+                        const NullMap::value_type* null_map = nullptr) const override {
+        const auto& col_from =
+                assert_cast<const ColumnTimeStampTz&>(*block.get_by_position(arguments[0]).column)
+                        .get_data();
+
+        auto col_to = ColumnTimeStampTz::create(input_rows_count);
+        auto& col_to_data = col_to->get_data();
+        const auto& local_time_zone = context->state()->timezone_obj();
+
+        const auto from_scale = block.get_by_position(arguments[0]).type->get_scale();
+        const auto to_scale = block.get_by_position(result).type->get_scale();
+
+        for (int i = 0; i < input_rows_count; ++i) {
+            if (null_map && null_map[i]) {
+                continue;
+            }
+
+            const auto& from_tz = col_from[i];
+            auto& to_tz = col_to_data[i];
+
+            if (!transform_date_scale(to_scale, from_scale, to_tz, from_tz)) {
+                return Status::InternalError(
+                        "can not cast from  timestamptz : {} to timestamptz in timezone : {}",
+                        TimestampTzValue {from_tz}.to_string(local_time_zone, from_scale),
+                        context->state()->timezone());
+            }
+        }
+        block.get_by_position(result).column = std::move(col_to);
+        return Status::OK();
+    }
+};
+
+template <>
+class CastToImpl<CastModeType::NonStrictMode, DataTypeTimeStampTz, DataTypeTimeStampTz>
+        : public CastToBase {
+public:
+    Status execute_impl(FunctionContext* context, Block& block, const ColumnNumbers& arguments,
+                        uint32_t result, size_t input_rows_count,
+                        const NullMap::value_type*) const override {
+        const auto& col_from =
+                assert_cast<const ColumnTimeStampTz&>(*block.get_by_position(arguments[0]).column)
+                        .get_data();
+
+        auto col_to = ColumnTimeStampTz::create(input_rows_count);
+        auto& col_to_data = col_to->get_data();
+        auto col_null = ColumnBool::create(input_rows_count, 0);
+        auto& col_null_map = col_null->get_data();
+
+        const auto from_scale = block.get_by_position(arguments[0]).type->get_scale();
+        const auto to_scale = block.get_by_position(result).type->get_scale();
+
+        for (int i = 0; i < input_rows_count; ++i) {
+            const auto& from_tz = col_from[i];
+            auto& to_tz = col_to_data[i];
+
+            if (!transform_date_scale(to_scale, from_scale, to_tz, from_tz)) {
+                col_null_map[i] = true;
+                to_tz = TimestampTzValue(MIN_DATETIME_V2);
+            }
+        }
+
+        block.get_by_position(result).column =
+                ColumnNullable::create(std::move(col_to), std::move(col_null));
+        return Status::OK();
+    }
+};
+
 template <CastModeType CastMode, typename FromDataType, typename ToDataType>
     requires(IsStringType<FromDataType> && IsDatelikeTypes<ToDataType>)
 class CastToImpl<CastMode, FromDataType, ToDataType> : public CastToBase {
@@ -486,6 +656,8 @@ public:
     }
 };
 
+#include "common/compile_check_end.h"
+
 namespace CastWrapper {
 
 template <typename ToDataType> // must datelike type
@@ -525,6 +697,62 @@ WrapperType create_datelike_wrapper(FunctionContext* context, const DataTypePtr&
                                               null_map);
     };
 }
-#include "common/compile_check_end.h"
-}; // namespace CastWrapper
+
+WrapperType create_datelike_wrapper(FunctionContext* context, const DataTypePtr& from_type,
+                                    PrimitiveType to_type) {
+    switch (to_type) {
+    case TYPE_DATE:
+        return create_datelike_wrapper<DataTypeDate>(context, from_type);
+    case TYPE_DATETIME:
+        return create_datelike_wrapper<DataTypeDateTime>(context, from_type);
+    case TYPE_DATEV2:
+        return create_datelike_wrapper<DataTypeDateV2>(context, from_type);
+    case TYPE_DATETIMEV2:
+        return create_datelike_wrapper<DataTypeDateTimeV2>(context, from_type);
+    case TYPE_TIMEV2:
+        return create_datelike_wrapper<DataTypeTimeV2>(context, from_type);
+    default:
+        return create_unsupport_wrapper(
+                fmt::format("CAST AS date: unsupported to_type {}", type_to_string(to_type)));
+    }
+}
+
+WrapperType create_timestamptz_wrapper(FunctionContext* context, const DataTypePtr& from_type) {
+    std::shared_ptr<CastToBase> cast_to_timestamptz;
+
+    auto make_timestamptz_wrapper = [&](const auto& types) -> bool {
+        using Types = std::decay_t<decltype(types)>;
+        using FromDataType = typename Types::LeftType;
+        if constexpr (CastUtil::IsBaseCastFromType<FromDataType> ||
+                      IsTimeStampTzType<FromDataType>) {
+            if (context->enable_strict_mode()) {
+                cast_to_timestamptz = std::make_shared<
+                        CastToImpl<CastModeType::StrictMode, FromDataType, DataTypeTimeStampTz>>();
+            } else {
+                cast_to_timestamptz =
+                        std::make_shared<CastToImpl<CastModeType::NonStrictMode, FromDataType,
+                                                    DataTypeTimeStampTz>>();
+            }
+            return true;
+        } else {
+            return false;
+        }
+    };
+
+    if (!call_on_index_and_data_type<void>(from_type->get_primitive_type(),
+                                           make_timestamptz_wrapper)) {
+        return create_unsupport_wrapper(
+                fmt::format("CAST AS timestamptz not supported {}", from_type->get_name()));
+    }
+
+    return [cast_to_timestamptz](FunctionContext* context, Block& block,
+                                 const ColumnNumbers& arguments, uint32_t result,
+                                 size_t input_rows_count,
+                                 const NullMap::value_type* null_map = nullptr) {
+        return cast_to_timestamptz->execute_impl(context, block, arguments, result,
+                                                 input_rows_count, null_map);
+    };
+}
+
+} // namespace CastWrapper
 } // namespace doris

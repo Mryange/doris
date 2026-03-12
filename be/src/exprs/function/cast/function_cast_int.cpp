@@ -15,14 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#pragma once
-
-#include <type_traits>
-
-#include "common/status.h"
-#include "core/data_type/data_type_decimal.h"
 #include "core/data_type/data_type_number.h"
-#include "core/data_type/primitive_type.h"
 #include "exprs/function/cast/cast_to_basic_number_common.h"
 
 namespace doris {
@@ -230,6 +223,9 @@ public:
                                                                  input_rows_count);
     }
 };
+
+#include "common/compile_check_end.h"
+
 namespace CastWrapper {
 
 template <typename ToDataType>
@@ -265,6 +261,25 @@ WrapperType create_int_wrapper(FunctionContext* context, const DataTypePtr& from
                                        null_map);
     };
 }
+
+WrapperType create_int_wrapper(FunctionContext* context, const DataTypePtr& from_type,
+                               PrimitiveType to_type) {
+    switch (to_type) {
+    case TYPE_TINYINT:
+        return create_int_wrapper<DataTypeInt8>(context, from_type);
+    case TYPE_SMALLINT:
+        return create_int_wrapper<DataTypeInt16>(context, from_type);
+    case TYPE_INT:
+        return create_int_wrapper<DataTypeInt32>(context, from_type);
+    case TYPE_BIGINT:
+        return create_int_wrapper<DataTypeInt64>(context, from_type);
+    case TYPE_LARGEINT:
+        return create_int_wrapper<DataTypeInt128>(context, from_type);
+    default:
+        return create_unsupport_wrapper(
+                fmt::format("CAST AS int: unsupported to_type {}", type_to_string(to_type)));
+    }
+}
+
 } // namespace CastWrapper
-#include "common/compile_check_end.h"
 } // namespace doris
