@@ -118,79 +118,42 @@ TEST_F(DistinctStreamingAggOperatorTest, test2) {
 }
 
 TEST_F(DistinctStreamingAggOperatorTest, test3) {
-    // batch size  = 10
+    // Blocking mode: all input consumed before any output
     op->_is_streaming_preagg = true;
 
     create_op({std::make_shared<DataTypeInt64>()}, {std::make_shared<DataTypeInt64>()});
 
+    // Push multiple blocks - blocking mode should consume all without outputting
     {
         auto block =
                 ColumnHelper::create_block<DataTypeInt64>({1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4});
         EXPECT_TRUE(op->push(state.get(), &block, false));
-        EXPECT_EQ(local_state->_cache_block.rows(), 0);
-        EXPECT_EQ(local_state->_aggregated_block->rows(), 4);
         EXPECT_TRUE(op->need_more_input_data(state.get()));
     }
 
     {
         auto block = ColumnHelper::create_block<DataTypeInt64>({5, 6, 7, 8});
         EXPECT_TRUE(op->push(state.get(), &block, false));
-        EXPECT_EQ(local_state->_cache_block.rows(), 0);
-        EXPECT_EQ(local_state->_aggregated_block->rows(), 8);
         EXPECT_TRUE(op->need_more_input_data(state.get()));
     }
 
+    // Signal eos - now blocking mode transitions to output phase
     {
         auto block = ColumnHelper::create_block<DataTypeInt64>({9, 10, 11, 12});
-        EXPECT_TRUE(op->push(state.get(), &block, false));
-        EXPECT_EQ(local_state->_cache_block.rows(), 2);
-        EXPECT_EQ(local_state->_aggregated_block->rows(), 10);
+        local_state->_child_eos = true;
+        EXPECT_TRUE(op->push(state.get(), &block, true));
         EXPECT_FALSE(op->need_more_input_data(state.get()));
     }
 
+    // Pull should output all distinct keys from hash table
     {
         Block block;
         bool eos = false;
         EXPECT_TRUE(op->pull(state.get(), &block, &eos));
-        EXPECT_FALSE(eos);
-        EXPECT_EQ(local_state->_cache_block.rows(), 0);
-        EXPECT_EQ(local_state->_aggregated_block->rows(), 2);
+        // All 12 distinct keys should be output
+        EXPECT_EQ(block.rows(), 12);
     }
-    {
-        local_state->_stop_emplace_flag = true;
-        auto block = ColumnHelper::create_block<DataTypeInt64>({13, 14, 15});
-        EXPECT_TRUE(op->push(state.get(), &block, false));
-        EXPECT_EQ(local_state->_cache_block.rows(), 0);
-        EXPECT_EQ(local_state->_aggregated_block->rows(), 5);
-        EXPECT_FALSE(op->need_more_input_data(state.get()));
-    }
-    {
-        Block block;
-        bool eos = false;
-        EXPECT_TRUE(op->pull(state.get(), &block, &eos));
-        EXPECT_FALSE(eos);
-        EXPECT_EQ(block.rows(), 5);
-        EXPECT_EQ(local_state->_cache_block.rows(), 0);
-        EXPECT_EQ(local_state->_aggregated_block->rows(), 0);
-    }
-    {
-        EXPECT_TRUE(op->need_more_input_data(state.get()));
-        local_state->_stop_emplace_flag = true;
-        auto block = ColumnHelper::create_block<DataTypeInt64>({13, 14, 15});
-        EXPECT_TRUE(op->push(state.get(), &block, false));
-        EXPECT_EQ(local_state->_cache_block.rows(), 0);
-        EXPECT_EQ(local_state->_aggregated_block->rows(), 3);
-        EXPECT_FALSE(op->need_more_input_data(state.get()));
-    }
-    {
-        Block block;
-        bool eos = false;
-        EXPECT_TRUE(op->pull(state.get(), &block, &eos));
-        EXPECT_FALSE(eos);
-        EXPECT_EQ(block.rows(), 3);
-        EXPECT_EQ(local_state->_cache_block.rows(), 0);
-        EXPECT_EQ(local_state->_aggregated_block->rows(), 0);
-    }
+
     { EXPECT_TRUE(op->close(state.get())); }
 }
 

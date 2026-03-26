@@ -50,24 +50,17 @@ private:
     friend class DistinctStreamingAggOperatorX;
     template <typename LocalStateType>
     friend class StatefulOperatorX;
-    Status _distinct_pre_agg_with_serialized_key(Block* in_block, Block* out_block);
+
+    // Build phase: evaluate exprs and emplace into hash table
     Status _init_hash_method(const VExprContextSPtrs& probe_exprs);
-    void _emplace_into_hash_table_to_distinct(IColumn::Selector& distinct_row,
-                                              ColumnRawPtrs& key_columns, const uint32_t num_rows);
+    void _emplace_into_hash_table(ColumnRawPtrs& key_columns, const uint32_t num_rows);
+
+    // Output phase: iterate hash table and produce output block
+    void _output_distinct_keys(Block* block);
     void _make_nullable_output_key(Block* block);
-    bool _should_expand_preagg_hash_tables();
 
-    void _swap_cache_block(Block* block) {
-        DCHECK(!_cache_block.is_empty_column());
-        block->swap(_cache_block);
-        _cache_block = block->clone_empty();
-    }
-
-    IColumn::Selector _distinct_row;
     Arena _arena;
     size_t _input_num_rows = 0;
-    bool _should_expand_hash_table = true;
-    bool _stop_emplace_flag = false;
     const int batch_size;
     std::unique_ptr<DistinctDataVariants> _agg_data = nullptr;
     // group by k1,k2
@@ -75,8 +68,11 @@ private:
     std::unique_ptr<Block> _child_block = nullptr;
     bool _child_eos = false;
     bool _reach_limit = false;
-    std::unique_ptr<Block> _aggregated_block = nullptr;
-    Block _cache_block;
+
+    // Output phase state
+    bool _output_done = false;
+    std::string _output_keys_buffer;  // reusable buffer for _output_distinct_keys
+
     RuntimeProfile::Counter* _build_timer = nullptr;
     RuntimeProfile::Counter* _expr_timer = nullptr;
     RuntimeProfile::Counter* _hash_table_compute_timer = nullptr;
@@ -84,8 +80,6 @@ private:
     RuntimeProfile::Counter* _hash_table_input_counter = nullptr;
     RuntimeProfile::Counter* _hash_table_size_counter = nullptr;
     RuntimeProfile::Counter* _insert_keys_to_column_timer = nullptr;
-
-    bool _is_single_backend = false;
 };
 
 class DistinctStreamingAggOperatorX final

@@ -206,6 +206,20 @@ struct HashMixWrapper {
     size_t operator()(Key key) const { return phmap::phmap_mix<sizeof(size_t)>()(Hash()(key)); }
 };
 
+// Like SR's StdHashWithSeed: phmap_mix(std::hash(key)).
+// For integer types std::hash is identity, so this is just phmap_mix(key) — fast 128-bit multiply, full 64-bit input.
+// For custom types (UInt72, UInt128, etc.) where std::hash is unavailable, falls back to HashCRC32.
+template <typename Key>
+struct StdHashWithPhmapMix {
+    size_t operator()(Key key) const {
+        if constexpr (std::is_arithmetic_v<Key>) {
+            return phmap::phmap_mix<sizeof(size_t)>()(std::hash<Key>()(key));
+        } else {
+            return phmap::phmap_mix<sizeof(size_t)>()(HashCRC32<Key>()(key));
+        }
+    }
+};
+
 template <>
 struct HashCRC32<doris::UInt256> {
     size_t operator()(const doris::UInt256& x) const {

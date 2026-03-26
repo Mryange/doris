@@ -41,6 +41,50 @@ public:
 
     using LookupResult = void*;
 
+    // Iterator wrapper that provides get_first() interface consistent with PHHashMap::iterator
+    template <typename Derived, bool is_const>
+    struct iterator_base {
+        using base_iterator_type =
+                std::conditional_t<is_const, typename HashSetImpl::const_iterator,
+                                   typename HashSetImpl::iterator>;
+        base_iterator_type base_iterator;
+
+        iterator_base() = default;
+        iterator_base(base_iterator_type it) : base_iterator(it) {}
+
+        bool operator==(const iterator_base& rhs) const {
+            return base_iterator == rhs.base_iterator;
+        }
+        bool operator!=(const iterator_base& rhs) const {
+            return base_iterator != rhs.base_iterator;
+        }
+
+        Derived& operator++() {
+            ++base_iterator;
+            return static_cast<Derived&>(*this);
+        }
+
+        const Derived& operator*() const { return static_cast<const Derived&>(*this); }
+        const Derived* operator->() const { return static_cast<const Derived*>(this); }
+
+        const Key& get_first() const { return *base_iterator; }
+    };
+
+    class iterator : public iterator_base<iterator, false> {
+    public:
+        using iterator_base<iterator, false>::iterator_base;
+    };
+
+    class const_iterator : public iterator_base<const_iterator, true> {
+    public:
+        using iterator_base<const_iterator, true>::iterator_base;
+    };
+
+    iterator begin() { return iterator(_hash_set.begin()); }
+    iterator end() { return iterator(_hash_set.end()); }
+    const_iterator begin() const { return const_iterator(_hash_set.begin()); }
+    const_iterator end() const { return const_iterator(_hash_set.end()); }
+
     PHHashSet() = default;
 
     PHHashSet(size_t reserve_for_num_elements) { _hash_set.reserve(reserve_for_num_elements); }
@@ -131,6 +175,40 @@ public:
     static constexpr SetType not_set_flag = false;
     static constexpr int hash_table_size = 1 << sizeof(KeyType) * 8;
     static_assert(sizeof(SetType) == 1);
+
+    // Iterator for SmallFixedSizeHashSet that scans the bool array
+    struct iterator {
+        const uint8_t* _table;
+        int _pos;
+
+        iterator() = default;
+        iterator(const uint8_t* table, int pos) : _table(table), _pos(pos) {}
+
+        bool operator==(const iterator& rhs) const { return _pos == rhs._pos; }
+        bool operator!=(const iterator& rhs) const { return _pos != rhs._pos; }
+
+        iterator& operator++() {
+            ++_pos;
+            while (_pos < hash_table_size && _table[_pos] != set_flag) {
+                ++_pos;
+            }
+            return *this;
+        }
+
+        const iterator& operator*() const { return *this; }
+        const iterator* operator->() const { return this; }
+
+        KeyType get_first() const { return static_cast<KeyType>(_pos); }
+    };
+
+    iterator begin() const {
+        int pos = 0;
+        while (pos < hash_table_size && _hash_table[pos] != set_flag) {
+            ++pos;
+        }
+        return iterator(_hash_table, pos);
+    }
+    iterator end() const { return iterator(_hash_table, hash_table_size); }
 
     SmallFixedSizeHashSet() { memset(_hash_table, not_set_flag, hash_table_size); }
 

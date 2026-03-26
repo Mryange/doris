@@ -32,7 +32,7 @@ namespace doris {
 
 template <typename T>
 struct DistinctHashSetType {
-    using HashSet = PHHashSet<T, HashCRC32<T>>;
+    using HashSet = PHHashSet<T, StdHashWithPhmapMix<T>>;
 };
 
 template <>

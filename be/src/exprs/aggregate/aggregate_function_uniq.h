@@ -63,7 +63,7 @@ struct AggregateFunctionUniqExactData {
             std::conditional_t<T == TYPE_ARRAY, UInt64,
                                std::conditional_t<T == TYPE_BOOLEAN, UInt8,
                                                   typename PrimitiveTypeTraits<T>::CppType>>>;
-    using Hash = HashCRC32<Key>;
+    using Hash = StdHashWithPhmapMix<Key>;
 
     using Set = flat_hash_set<Key, Hash>;
 
@@ -164,13 +164,19 @@ public:
             array_of_data_set[i] = &(this->data(places[i] + place_offset).set);
         }
 
+        // Precompute hash values to avoid double computation in prefetch + insert
+        std::vector<size_t> hash_values(batch_size);
+        for (size_t i = 0; i < batch_size; ++i) {
+            hash_values[i] = array_of_data_set[i]->hash(keys[i]);
+        }
+
         for (size_t i = 0; i != batch_size; ++i) {
             if (i + HASH_MAP_PREFETCH_DIST < batch_size) {
-                array_of_data_set[i + HASH_MAP_PREFETCH_DIST]->prefetch(
-                        keys[i + HASH_MAP_PREFETCH_DIST]);
+                array_of_data_set[i + HASH_MAP_PREFETCH_DIST]->prefetch_hash(
+                        hash_values[i + HASH_MAP_PREFETCH_DIST]);
             }
 
-            array_of_data_set[i]->insert(keys[i]);
+            array_of_data_set[i]->emplace_with_hash(hash_values[i], keys[i]);
         }
     }
 
@@ -193,11 +199,17 @@ public:
         const KeyType* keys = get_keys(keys_container, *columns[0], batch_size);
         auto& set = this->data(place).set;
 
+        // Precompute hash values to avoid double computation in prefetch + insert
+        std::vector<size_t> hash_values(batch_size);
+        for (size_t i = 0; i < batch_size; ++i) {
+            hash_values[i] = set.hash(keys[i]);
+        }
+
         for (size_t i = 0; i != batch_size; ++i) {
             if (i + HASH_MAP_PREFETCH_DIST < batch_size) {
-                set.prefetch(keys[i + HASH_MAP_PREFETCH_DIST]);
+                set.prefetch_hash(hash_values[i + HASH_MAP_PREFETCH_DIST]);
             }
-            set.insert(keys[i]);
+            set.emplace_with_hash(hash_values[i], keys[i]);
         }
     }
 
