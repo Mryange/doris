@@ -17,40 +17,98 @@
 
 #include <benchmark/benchmark.h>
 
-#include "benchmark_bit_pack.hpp"
-#include "benchmark_bits.hpp"
-#include "benchmark_block_bloom_filter.hpp"
-#include "benchmark_fastunion.hpp"
-#include "benchmark_hll_merge.hpp"
-#include "benchmark_string.hpp"
-#include "binary_cast_benchmark.hpp"
-#include "core/block/block.h"
-#include "vec/columns/column_string.h"
-#include "vec/data_types/data_type.h"
-#include "vec/data_types/data_type_string.h"
+#include <algorithm>
+#include <cstdint>
+#include <numeric>
+#include <random>
+#include <vector>
 
-namespace doris { // change if need
+#include "exec/common/hash_table/hash.h"
+#include "exec/common/hash_table/phmap_fwd_decl.h"
 
-static void Example1(benchmark::State& state) {
-    // init. dont time it.
-    state.PauseTiming();
-    Block block;
-    DataTypePtr str_type = std::make_shared<DataTypeString>();
-    std::vector<std::string> vals {100, "content"};
-    state.ResumeTiming();
+// ============================================================================
+// Benchmark: Doris HashSet vs SR-style HashSet for 10M int64 insert
+//
+// DorisHashSet:    HashCRC32 + EqualTo + Allocator_ (original Doris config)
+// SRStyleHashSet:  StdHashWithPhmapMix + std::equal_to + std::allocator
+// ============================================================================
 
-    // do test
-    for (auto _ : state) {
-        auto str_col = ColumnString::create();
-        for (auto& v : vals) {
-            str_col->insert_data(v.data(), v.size());
+static constexpr size_t NUM_ELEMENTS = 10'000'000;
+static constexpr size_t PREFETCH_DIST = 16;
+
+template <typename Key>
+struct StdHashWithPhmapMix {
+    size_t operator()(Key key) const {
+        if constexpr (std::is_arithmetic_v<Key>) {
+            return phmap::phmap_mix<sizeof(size_t)>()(std::hash<Key>()(key));
+        } else {
+            return phmap::phmap_mix<sizeof(size_t)>()(HashCRC32<Key>()(key));
         }
-        block.insert({std::move(str_col), str_type, "col"});
-        benchmark::DoNotOptimize(block); // mark the watched target
     }
+};
+
+// SR-style config: StdHashWithPhmapMix + std::equal_to + std::allocator
+using SRStyleHashSet = phmap::flat_hash_set<int64_t, StdHashWithPhmapMix<int64_t>,
+                                            std::equal_to<int64_t>, std::allocator<int64_t>>;
+
+// Doris original config: HashCRC32 + EqualTo + Allocator_
+using DorisHashSet = phmap::flat_hash_set<int64_t, HashCRC32<int64_t>, doris::EqualTo<int64_t>,
+                                          doris::Allocator_<int64_t>>;
+
+// Doris original config: HashCRC32 + EqualTo + Allocator_
+using DorisHashSetWithStdAlloc =
+        phmap::flat_hash_set<int64_t, HashCRC32<int64_t>, doris::EqualTo<int64_t>,
+                             std::allocator<int64_t>>;
+using SRStyleHashSetWithDorisAlloc =
+        phmap::flat_hash_set<int64_t, StdHashWithPhmapMix<int64_t>, std::equal_to<int64_t>,
+                             doris::Allocator_<int64_t>>;
+
+// Generate shuffled 1..N data
+static std::vector<int64_t> init_test_data() {
+    std::vector<int64_t> v(NUM_ELEMENTS);
+    std::iota(v.begin(), v.end(), 1);
+    std::mt19937_64 rng(42);
+    std::shuffle(v.begin(), v.end(), rng);
+    return v;
 }
-// could BENCHMARK many functions to compare them together.
-BENCHMARK(Example1);
-} // namespace doris
+
+// Global data, initialized before main() — no lazy init cost
+static std::vector<int64_t> g_test_data = init_test_data();
+
+// Benchmark: hash compute + prefetch insert (full path, all timed)
+template <typename HashSet>
+static void BM_HashSetInsert(benchmark::State& state) {
+    const auto& data = g_test_data;
+
+    for (auto _ : state) {
+        HashSet set;
+        // Precompute hash values (timed)
+        std::vector<size_t> hashes(NUM_ELEMENTS);
+        auto hash_fn = typename HashSet::hasher {};
+        for (size_t i = 0; i < NUM_ELEMENTS; ++i) {
+            hashes[i] = hash_fn(data[i]);
+        }
+
+        // Insert with prefetch (timed)
+        for (size_t i = 0; i < NUM_ELEMENTS; ++i) {
+            if (i + PREFETCH_DIST < NUM_ELEMENTS) {
+                set.prefetch_hash(hashes[i + PREFETCH_DIST]);
+            }
+            set.emplace_with_hash(hashes[i], data[i]);
+        }
+        benchmark::DoNotOptimize(set);
+    }
+    state.SetItemsProcessed(state.iterations() * NUM_ELEMENTS);
+}
+
+BENCHMARK(BM_HashSetInsert<SRStyleHashSet>)->Unit(benchmark::kMillisecond)->Iterations(10);
+BENCHMARK(BM_HashSetInsert<SRStyleHashSetWithDorisAlloc>)
+        ->Unit(benchmark::kMillisecond)
+        ->Iterations(10);
+
+BENCHMARK(BM_HashSetInsert<DorisHashSet>)->Unit(benchmark::kMillisecond)->Iterations(10);
+BENCHMARK(BM_HashSetInsert<DorisHashSetWithStdAlloc>)
+        ->Unit(benchmark::kMillisecond)
+        ->Iterations(10);
 
 BENCHMARK_MAIN();
