@@ -50,7 +50,7 @@ template <typename K, typename V, typename Hash = phmap::Hash<K>, typename Eq = 
 using flat_hash_map = phmap::flat_hash_map<K, V, Hash, Eq, Alloc>;
 
 template <typename K, typename Hash = phmap::Hash<K>, typename Eq = doris::EqualTo<K>,
-          typename Alloc = Allocator_<K>>
+          typename Alloc = std::allocator<K>>
 using flat_hash_set = phmap::flat_hash_set<K, Hash, Eq, Alloc>;
 
 } // namespace doris
