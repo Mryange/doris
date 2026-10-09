@@ -42,19 +42,15 @@ class ColumnSorter;
 using NullMap = ColumnUInt8::Container;
 using ConstNullMapPtr = const NullMap*;
 
-/// Class that specifies nullable columns. A nullable column represents
-/// a column, which may have any type, provided with the possibility of
-/// storing NULL values. For this purpose, a ColumnNullable object stores
-/// an ordinary column along with a special column, namely a byte map,
-/// whose type is ColumnUInt8. The latter column indicates whether the
-/// value of a given row is a NULL or not. Such a design is preferred
-/// over a bitmap because columns are usually stored on disk as compressed
-/// files. In this regard, using a bitmap instead of a byte map would
-/// greatly complicate the implementation with little to no benefits.
+/// A nullable column owns a nested column and an optional byte null map.
+/// An absent map means every existing row is non-NULL. A materialized map
+/// has the same size as the nested column at completed operation boundaries
+/// and may contain only zeros. Materialized maps are not automatically released.
 class ColumnNullable final : public COWHelper<IColumn, ColumnNullable> {
 private:
     friend class COWHelper<IColumn, ColumnNullable>;
 
+    explicit ColumnNullable(MutableColumnPtr&& nested_column_);
     ColumnNullable(MutableColumnPtr&& nested_column_, MutableColumnPtr&& null_map_);
     struct SharedTag {};
     ColumnNullable(SharedTag, ColumnPtr nested_column_, ColumnPtr null_map_);
@@ -71,7 +67,7 @@ public:
       * Call IColumn::mutate before modifying the returned column tree.
       */
     using Base = COWHelper<IColumn, ColumnNullable>;
-    static MutablePtr create(const ColumnPtr& nested_column_, const ColumnPtr& null_map_) {
+    static MutablePtr create(const ColumnPtr& nested_column_, const ColumnPtr& null_map_ = {}) {
         return Base::create(SharedTag {}, nested_column_, null_map_);
     }
 
@@ -88,21 +84,19 @@ public:
     }
 
     void sanity_check() const override {
-        if (_nested_column->size() != get_null_map_data().size()) {
-            throw doris::Exception(
-                    ErrorCode::INTERNAL_ERROR,
-                    "Size of nested column {} with size {} is not equal to size of null map {}",
-                    _nested_column->get_name(), _nested_column->size(), get_null_map_data().size());
-        }
+        check_consistency();
         _nested_column->sanity_check();
+        if (_null_map) {
+            _null_map->sanity_check();
+        }
     }
 
     bool is_variable_length() const override { return _nested_column->is_variable_length(); }
 
     std::string get_name() const override { return "Nullable(" + _nested_column->get_name() + ")"; }
     MutableColumnPtr clone_resized(size_t size) const override;
-    size_t size() const override { return get_null_map_column().size(); }
-    bool is_null_at(size_t n) const override { return get_null_map_column().get_data()[n] != 0; }
+    size_t size() const override { return _nested_column->size(); }
+    bool is_null_at(size_t n) const override { return _null_map && _null_map->get_data()[n] != 0; }
     Field operator[](size_t n) const override;
     void get(size_t n, Field& res) const override;
     bool get_bool(size_t n) const override {
@@ -156,27 +150,32 @@ public:
     void insert_from_with_type(const IColumn& src, size_t n) {
         const auto& src_concrete =
                 assert_cast<const ColumnNullable&, TypeCheckOnRelease::DISABLE>(src);
+        const size_t old_rows = size();
+        const UInt8 flag = src_concrete._null_map ? src_concrete._null_map->get_data()[n] : 0;
         assert_cast<ColumnType*, TypeCheckOnRelease::DISABLE>(_nested_column.get())
                 ->insert_from(src_concrete.get_nested_column(), n);
-        _null_map->insert_from(src_concrete.get_null_map_column(), n);
+        append_repeated_null_flag_after_nested(old_rows, flag, 1);
     }
 
     void insert_many_fix_len_data(const char* pos, size_t num) override {
-        push_false_to_nullmap(num);
+        const size_t old_rows = size();
         get_nested_column().insert_many_fix_len_data(pos, num);
+        append_non_null_after_nested(old_rows, num);
     }
 
     void insert_many_raw_data(const char* pos, size_t num) override {
         DCHECK(pos);
-        push_false_to_nullmap(num);
+        const size_t old_rows = size();
         get_nested_column().insert_many_raw_data(pos, num);
+        append_non_null_after_nested(old_rows, num);
     }
 
     void insert_many_dict_data(const int32_t* data_array, size_t start_index, const StringRef* dict,
                                size_t data_num, uint32_t dict_num) override {
-        push_false_to_nullmap(data_num);
+        const size_t old_rows = size();
         get_nested_column().insert_many_dict_data(data_array, start_index, dict, data_num,
                                                   dict_num);
+        append_non_null_after_nested(old_rows, data_num);
     }
 
     void insert_many_continuous_binary_data(const char* data, const uint32_t* offsets,
@@ -184,32 +183,37 @@ public:
         if (UNLIKELY(num == 0)) {
             return;
         }
-        push_false_to_nullmap(num);
+        const size_t old_rows = size();
         get_nested_column().insert_many_continuous_binary_data(data, offsets, num);
+        append_non_null_after_nested(old_rows, num);
     }
 
     void insert_offsets_from_lengths(const uint32_t* lengths, size_t num) override {
         if (UNLIKELY(num == 0)) {
             return;
         }
-        push_false_to_nullmap(num);
+        const size_t old_rows = size();
         get_nested_column().insert_offsets_from_lengths(lengths, num);
+        append_non_null_after_nested(old_rows, num);
     }
 
     // Default value in `ColumnNullable` is null
     void insert_default() override {
+        const size_t old_rows = size();
         get_nested_column().insert_default();
-        get_null_map_data().push_back(1);
+        append_repeated_null_flag_after_nested(old_rows, 1, 1);
     }
 
     void insert_many_defaults(size_t length) override {
+        const size_t old_rows = size();
         get_nested_column().insert_many_defaults(length);
-        get_null_map_data().resize_fill(get_null_map_data().size() + length, 1);
+        append_repeated_null_flag_after_nested(old_rows, 1, length);
     }
 
     void insert_not_null_elements(size_t num) {
+        const size_t old_rows = size();
         get_nested_column().insert_many_defaults(num);
-        push_false_to_nullmap(num);
+        append_non_null_after_nested(old_rows, num);
     }
 
     void pop_back(size_t n) override;
@@ -257,12 +261,16 @@ public:
 
     void mutate_subcolumns() override {
         mutate_subcolumn(_nested_column);
-        mutate_subcolumn<ColumnUInt8>(_null_map);
+        if (_null_map) {
+            mutate_subcolumn<ColumnUInt8>(_null_map);
+        }
     }
 
     void for_each_subcolumn(ColumnCallback callback) const override {
         callback(*static_cast<const IColumn::Ptr&>(_nested_column));
-        callback(*static_cast<const ColumnUInt8::Ptr&>(_null_map));
+        if (_null_map) {
+            callback(*static_cast<const ColumnUInt8::Ptr&>(_null_map));
+        }
     }
 
     bool structure_equals(const IColumn& rhs) const override {
@@ -277,7 +285,7 @@ public:
 
     bool is_exclusive() const override {
         return IColumn::is_exclusive() && _nested_column->is_exclusive() &&
-               get_null_map_column().is_exclusive();
+               (!_null_map || _null_map->is_exclusive());
     }
 
     bool try_replace_null_payload_with_default_without_cow() const override;
@@ -299,7 +307,9 @@ public:
     MutableColumnPtr get_nested_column_ptr() { return _nested_column->assert_mutable(); }
 
     void clear() override {
-        _null_map->clear();
+        if (_null_map) {
+            _null_map->clear();
+        }
         _nested_column->clear();
     }
 
@@ -323,10 +333,14 @@ public:
         DCHECK(size() > self_row);
         const auto& nullable_rhs =
                 assert_cast<const ColumnNullable&, TypeCheckOnRelease::DISABLE>(rhs);
-        get_null_map_column().replace_column_data(nullable_rhs.get_null_map_column(), row,
-                                                  self_row);
+        const UInt8 flag = nullable_rhs._null_map ? nullable_rhs._null_map->get_data()[row] : 0;
+        if (flag) {
+            materialize_null_map_for_write().get_data()[self_row] = flag;
+        } else if (_null_map) {
+            _null_map->get_data()[self_row] = 0;
+        }
 
-        if (!nullable_rhs.is_null_at(row)) {
+        if (!flag) {
             _nested_column->replace_column_data(*nullable_rhs._nested_column, row, self_row);
         }
     }
@@ -342,9 +356,10 @@ public:
                 assert_cast<const ColumnNullable&, TypeCheckOnRelease::DISABLE>(rhs);
         DCHECK(nullable_rhs.size() >= src_start + count);
 
-        // Copy null_map using memcpy for efficiency
-        memcpy(get_null_map_data().data() + self_start,
-               nullable_rhs.get_null_map_data().data() + src_start, count);
+        DCHECK(!nullable_rhs.has_null(src_start, src_start + count));
+        if (_null_map && count != 0) {
+            memset(_null_map->get_data().data() + self_start, 0, count);
+        }
 
         // Batch copy nested column data using optimized replace_column_data_range
         // This leverages memcpy in ColumnVector/ColumnDecimal for maximum performance
@@ -387,7 +402,9 @@ public:
 
     void erase(size_t start, size_t length) override {
         get_nested_column().erase(start, length);
-        get_null_map_column().erase(start, length);
+        if (_null_map) {
+            _null_map->erase(start, length);
+        }
     }
 
     size_t serialize_impl(char* pos, const size_t row) const override;
@@ -397,27 +414,67 @@ public:
                (is_null_at(row) ? 0 : _nested_column->serialize_size_at(row));
     }
 
-    // return the column that represents the byte map. if want use null_map, just call this.
+    /// Read-only probes never allocate; nullptr means all existing rows are non-NULL.
+    const ColumnUInt8* null_map_column_if_materialized() const { return _null_map.get(); }
+    const NullMap* null_map_data_if_materialized() const {
+        return _null_map ? &_null_map->get_data() : nullptr;
+    }
+
+    /// Requires a mutable column tree and consistent subcolumn sizes. Call before
+    /// modifying either subcolumn through the legacy getters, not after nested grows.
+    ColumnUInt8& materialize_null_map_for_write();
+
+    /// Record old_rows before changing nested. Until commit, the column must not be read.
+    void append_non_null_after_nested(size_t old_rows, size_t appended_rows);
+    /// flags must not alias this column's map; nullptr denotes all non-NULL flags.
+    void append_null_flags_after_nested(size_t old_rows, const UInt8* flags, size_t appended_rows);
+    void set_null_at(size_t row);
+
+    /// Legacy pointer reads may return nullptr. Reference getters require a materialized map.
     const ColumnUInt8::Ptr& get_null_map_column_ptr() const { return _null_map; }
-    const ColumnUInt8& get_null_map_column() const { return *_null_map; }
+    const ColumnUInt8& get_null_map_column() const {
+        DORIS_CHECK(_null_map) << "Use null_map_column_if_materialized for an implicit null map";
+        return *_null_map;
+    }
     const NullMap& get_null_map_data() const { return get_null_map_column().get_data(); }
 
     ColumnUInt8::MutablePtr get_null_map_column_ptr() {
+        DORIS_CHECK(_null_map) << "Materialize the null map before modifying either subcolumn";
         auto null_map = _null_map->assert_mutable();
         return ColumnUInt8::cast_to_column_mutptr(
                 assert_cast<ColumnUInt8*, TypeCheckOnRelease::DISABLE>(null_map.get()));
     }
-    ColumnUInt8& get_null_map_column() { return *_null_map; }
+    ColumnUInt8& get_null_map_column() {
+        DORIS_CHECK(_null_map) << "Materialize the null map before modifying either subcolumn";
+        return *_null_map;
+    }
     NullMap& get_null_map_data() { return get_null_map_column().get_data(); }
 
-    // push not null value wouldn't change the nullity. no need to update _has_null
+    /// Legacy map-only writes require explicit materialization before either subcolumn grows.
     void push_false_to_nullmap(size_t num) { get_null_map_column().insert_many_vals(0, num); }
     void fill_false_to_nullmap(size_t num) {
-        _null_map->clear();
+        get_null_map_column().clear();
         get_null_map_column().insert_many_vals(0, num);
     }
 
 private:
+    void check_append_after_nested(size_t old_rows, size_t appended_rows) const;
+    void append_repeated_null_flag_after_nested(size_t old_rows, UInt8 flag, size_t appended_rows);
+    void append_null_map_range_after_nested(size_t old_rows, const ColumnNullable& src,
+                                            size_t start, size_t length);
+
+    template <typename Index>
+    void materialize_null_map_for_selected_rows(const ColumnNullable& src, const Index* indices,
+                                                size_t count) {
+        if (!_null_map && src._null_map) {
+            for (size_t i = 0; i != count; ++i) {
+                if (src.is_null_at(indices[i])) {
+                    materialize_null_map_for_write();
+                    return;
+                }
+            }
+        }
+    }
     template <bool negative>
     void apply_null_map_impl(const ColumnUInt8& map);
 
